@@ -1,0 +1,9 @@
+{
+  "name": "smockron-master",
+  "version": "0.0.1",
+  "dependencies": {
+    "zmq": "2.5.x",
+    "then-redis": "0.3.x",
+    "q": "0.9.x"
+  }
+}
