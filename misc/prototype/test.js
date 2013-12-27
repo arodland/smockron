@@ -6,11 +6,13 @@ var burst = 10;
 
 function compute_until(now) {
     if (prev.length >= burst) {
-        return prev[prev.length - burst] + burst * interval;
+        var a = prev[prev.length - burst] + burst * interval;
+        var b = Math.max(now, prev[prev.length - 1]) + interval;
+        return b;
     }
 }
 
-var until;
+var until, until_server;
 
 function rate_limit(cb, failcb) {
     var now = (new Date()).getTime();
@@ -40,12 +42,13 @@ function rate_limit(cb, failcb) {
         setImmediate(cb);
     }
 
-    prev.push(until > now ? until : now);
+//    prev.push(until_server > now ? until_server : now); // harsh
+    prev.push(until > now ? until : now); // permissive
 
     console.log(prev);
 
-    var foo = compute_until(now);
-    setTimeout(function() { until = foo }, 200);
+    until_server = compute_until(now);
+    setTimeout(function() { until = until_server }, 2000);
     console.log("Next is allowed at", until, "(" + (until - now) + "ms from now)");
     console.log("");
 }
