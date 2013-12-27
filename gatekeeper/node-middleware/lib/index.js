@@ -50,23 +50,21 @@ Smockron.Client.prototype.connect = function() {
 };
 
 Smockron.Client.prototype._onControl = function() {
-  if (controlMsg = this._parseControl(arguments)) {
+  try {
+    controlMsg = this._parseControl(arguments);
     this.emit('control', controlMsg);
+  } catch (e) {
+    console.warn("Error decoding control message", e);
   }
 };
 
 Smockron.Client.prototype._parseControl = function(data) {
   var msg = {};
   if (data.length < 3) {
-    console.warn("Too-short control message");
-    return;
+    throw("Too-short control message");
   }
-  try {
-    var decoded = Array.prototype.slice.call(data, 0).map(function (buf) { return buf.toString() });
-  } catch (e) {
-    console.warn("Error decoding buffers", e);
-    return;
-  }
+
+  var decoded = Array.prototype.slice.call(data, 0).map(function (buf) { return buf.toString() });
 
   var ret = {
     domain: decoded[0],
@@ -106,6 +104,8 @@ function Smockron(opts) {
     server: opts.server
   });
 
+  this.delayed = {};
+
   this.client.on('control', this._onControl.bind(this));
   this.client.connect();
 };
@@ -124,7 +124,7 @@ Smockron.prototype._onControl = function(msg) {
 };
 
 Smockron.prototype._delayUntil = function(msg) {
-  console.log("Delay", msg.identifier, "until", msg.ts, "for", msg.domain);
+  this.delayed[msg.identifier] = msg.ts;
 };
 
 Smockron.prototype.middleware = function() {
@@ -133,12 +133,26 @@ Smockron.prototype.middleware = function() {
   return function (req, res, next) {
     var now = (new Date()).getTime();
     var identifier = self.identifierCB(req);
-    self.client.sendAccounting({
-      status: 'ACCEPTED',
+    var delayTS = self.delayed[identifier];
+    var accounting = {
       identifier: identifier,
       rcvTS: now
-    });
+    };
 
-    setImmediate(next);
+    if (delayTS && delayTS > now) {
+      if (delayTS > now + 5000) {
+        res.send(503, 'Rejected');
+        accounting.status = 'REJECTED';
+      } else {
+        setTimeout(next, delayTS - now);
+        accounting.status = 'DELAYED';
+        accounting.delayTS = delayTS;
+      }
+    } else {
+      accounting.status = 'ACCEPTED';
+      setImmediate(next);
+    }
+
+    self.client.sendAccounting(accounting);
   };
 };

@@ -1,0 +1,16 @@
+{
+  "name": "smockron-middleware",
+  "version": "0.0.1",
+  "dependencies": {
+    "zmq": {
+      "version": "2.5.1",
+      "from": "zmq@2.5.x",
+      "dependencies": {
+        "set-immediate": {
+          "version": "0.1.1",
+          "from": "set-immediate@*"
+        }
+      }
+    }
+  }
+}

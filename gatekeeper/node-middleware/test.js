@@ -2,7 +2,7 @@ var express = require('express'),
     Smockron = require('./lib/');
 
 var smockron = new Smockron({
-    domain: "testdomain",
+    domain: "default",
     server: "localhost",
     identifierCB: Smockron.REMOTE_ADDR
 });
@@ -10,7 +10,7 @@ var smockron = new Smockron({
 var app = express();
 
 app.get('/', smockron.middleware(), function(req, res) {
-  res.send('OK');
+  res.send("OK\n");
 });
 
 app.listen(8000);
