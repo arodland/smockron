@@ -3,8 +3,7 @@ var express = require('express'),
 
 var smockron = new Smockron({
     domain: "testdomain",
-    accounting: "tcp://localhost:10004",
-    control: "tcp://localhost:10005",
+    server: "localhost",
     identifierCB: Smockron.REMOTE_ADDR
 });
 
