@@ -108,6 +108,17 @@ function Smockron(opts) {
 
   this.client.on('control', this._onControl.bind(this));
   this.client.connect();
+
+  setInterval(this._cleanup.bind(this), 1000).unref();
+};
+
+Smockron.prototype._cleanup = function() {
+  var now = (new Date()).getTime();
+
+  for (var key in this.delayed) {
+    if (this.delayed[key] < now)
+      delete this.delayed[key];
+  }
 };
 
 Smockron.REMOTE_ADDR = function(req) {
