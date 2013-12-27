@@ -42,12 +42,12 @@ says it should be throttled.
 
 If the number of requests in the past `(burst / rate)` is less than `burst`,
 then another request is acceptable immediately. Otherwise let `start` be the
-timestamp of the request `(burst - 1)` requests prior to the current one;
-the next request will be allowed at the time `start + (burst / rate)`. The
-timestamps stored in the history should be the received timestamp for
-accepted requests, and the delayed timestamp for delayed requests; this
-ensures that the policy can be enforced with a history of no more than
-`burst` timestamps.
+greater of the current time and the last timestamp in the history; the next
+request will be allowed at the time `start + (1 / rate)`. The timestamps
+stored in the history should be the received timestamp for accepted
+requests, and the delayed timestamp for delayed requests; this ensures that
+the policy can be enforced with a history of no more than `burst`
+timestamps.
 
 ## Protocol: 
 
