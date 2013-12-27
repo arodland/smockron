@@ -1,0 +1,41 @@
+{
+  "name": "smockron-master",
+  "version": "0.0.1",
+  "dependencies": {
+    "zmq": {
+      "version": "2.5.1",
+      "from": "zmq@2.5.x",
+      "dependencies": {
+        "set-immediate": {
+          "version": "0.1.1",
+          "from": "set-immediate@*"
+        }
+      }
+    },
+    "then-redis": {
+      "version": "0.3.9",
+      "from": "then-redis@0.3.x",
+      "dependencies": {
+        "when": {
+          "version": "2.0.1",
+          "from": "when@2.0.x"
+        },
+        "hiredis": {
+          "version": "0.1.15",
+          "from": "hiredis@0.1.15",
+          "dependencies": {
+            "bindings": {
+              "version": "1.1.1",
+              "from": "bindings@*"
+            }
+          }
+        }
+      }
+    },
+    "when": {
+      "version": "2.7.0",
+      "from": "when@*",
+      "resolved": "https://registry.npmjs.org/when/-/when-2.7.0.tgz"
+    }
+  }
+}

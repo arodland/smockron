@@ -75,9 +75,9 @@ Smockron.Server.prototype._parseAccounting = function(data) {
   };
 
   if (decoded[4])
-    delayTS = parseFloat(decoded[4]);
+    ret.delayTS = parseFloat(decoded[4]);
   if (decoded[5])
-    logInfo = parseFloat(decoded[5]);
+    ret.logInfo = parseFloat(decoded[5]);
 
   return ret;
 };
