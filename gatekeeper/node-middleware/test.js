@@ -9,6 +9,8 @@ var smockron = new Smockron({
 
 var app = express();
 
+app.use(express.logger());
+
 app.get('/', smockron.middleware(), function(req, res) {
   res.send("OK\n");
 });
