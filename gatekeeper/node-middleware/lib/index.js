@@ -37,7 +37,7 @@ Smockron.Client.prototype._parseConnectionString = function(connectionString) {
   } else {
     throw "Invalid connection string '" + connectionString + "'";
   }
-}
+};
 
 Smockron.Client.prototype.connect = function() {
   this.socket.accounting = zmq.socket('pub');
@@ -53,7 +53,7 @@ Smockron.Client.prototype._onControl = function() {
   if (controlMsg = this._parseControl(arguments)) {
     this.emit('control', controlMsg);
   }
-}
+};
 
 Smockron.Client.prototype._parseControl = function(data) {
   var msg = {};
@@ -94,7 +94,7 @@ Smockron.Client.prototype.sendAccounting = function(opts) {
   if (opts.logInfo !== undefined)
     frames[5] = opts.logInfo;
   this.socket.accounting.send(frames);
-}
+};
 
 /* END CLIENT */
 
