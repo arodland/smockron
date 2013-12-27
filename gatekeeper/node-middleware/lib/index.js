@@ -138,8 +138,13 @@ Smockron.prototype._delayUntil = function(msg) {
   this.delayed[msg.identifier] = msg.ts;
 };
 
-Smockron.prototype.middleware = function() {
+Smockron.prototype.middleware = function(rejectCB) {
   var self = this;
+  if (rejectCB === undefined) {
+    rejectCB = function(req, res) {
+      res.send(503, "Rejected\n");
+    };
+  }
 
   return function (req, res, next) {
     var now = (new Date()).getTime();
@@ -152,7 +157,7 @@ Smockron.prototype.middleware = function() {
 
     if (delayTS && delayTS > now) {
       if (delayTS > now + 5000) {
-        res.send(503, 'Rejected');
+        setImmediate(function () { rejectCB(req, res) });
         accounting.status = 'REJECTED';
       } else {
         setTimeout(next, delayTS - now);
