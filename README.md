@@ -114,6 +114,10 @@ Master subscribes to "" (all messages)
 
 #### Frame 0: Domain
 
+The domain should be encoded with a trailing null ("\0"), which will be
+stripped off by the recipient. This ensures it is usable as a pubsub key.
+Domains should not contain nulls in their names.
+
 #### Frame 1: Status
 
 * "ACCEPTED": Request was accepted
@@ -145,6 +149,10 @@ Gatekeeper subscribes to all domains for which it will receive traffic.
 | domain | command | identifier | arguments... |
 |:------:|:-------:|:----------:|:------------:|
 |    0   |    1    |      2     |      3+      |
+
+The domain should be encoded with a trailing null ("\0"), which will be
+stripped off by the recipient. This ensures it is usable as a pubsub key.
+Domains should not contain nulls in their names.
 
 #### DELAY_UNTIL
 

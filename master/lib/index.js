@@ -68,7 +68,7 @@ Smockron.Server.prototype._parseAccounting = function(data) {
   var decoded = Array.prototype.slice.call(data, 0).map(function (buf) { return buf.toString() });
 
   var ret = {
-    domain: decoded[0],
+    domain: decoded[0].replace(/\0$/, ''),
     status: decoded[1],
     identifier: decoded[2],
     rcvTS: parseFloat(decoded[3])
@@ -84,7 +84,7 @@ Smockron.Server.prototype._parseAccounting = function(data) {
 
 Smockron.Server.prototype.sendControl = function(opts) {
   var frames = [
-    opts.domain,
+    opts.domain + "\0",
     opts.command,
     opts.identifier
   ].concat(

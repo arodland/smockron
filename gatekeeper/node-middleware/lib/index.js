@@ -45,7 +45,7 @@ Smockron.Client.prototype.connect = function() {
 
   this.socket.control = zmq.socket('sub');
   this.socket.control.connect(this.server.control);
-  this.socket.control.subscribe(this._domain);
+  this.socket.control.subscribe(this._domain + "\0");
   this.socket.control.on('message', this._onControl.bind(this));
 };
 
@@ -67,7 +67,7 @@ Smockron.Client.prototype._parseControl = function(data) {
   var decoded = Array.prototype.slice.call(data, 0).map(function (buf) { return buf.toString() });
 
   var ret = {
-    domain: decoded[0],
+    domain: decoded[0].replace(/\0$/, ''),
     command: decoded[1],
     identifier: decoded[2],
     args: decoded.slice(3)
@@ -80,7 +80,7 @@ Smockron.Client.prototype._parseControl = function(data) {
 
 Smockron.Client.prototype.sendAccounting = function(opts) {
   var frames = [
-    this._domain,
+    this._domain + "\0",
     opts.status,
     opts.identifier,
     opts.rcvTS,
