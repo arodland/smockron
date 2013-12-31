@@ -105,6 +105,8 @@ function Smockron(opts) {
   });
 
   this.delayed = {};
+  this.queue = {};
+  this.timer = {};
 
   this.client.on('control', this._onControl.bind(this));
   this.client.connect();
@@ -139,6 +141,50 @@ Smockron.prototype._delayUntil = function(msg) {
     this.delayed[msg.identifier] = msg.ts;
 };
 
+Smockron.prototype.enqueue = function(identifier, cb) {
+  if (!this.queue[identifier])
+    this.queue[identifier] = [];
+  if (this.queue[identifier].length >= 1) {
+    return false;
+  } else {
+    this.queue[identifier].push(cb);
+    this.ensureTimer(identifier);
+    return true;
+  }
+};
+
+Smockron.prototype.ensureTimer = function(identifier) {
+  if (this.timer[identifier])
+    clearTimeout(this.timer[identifier]);
+  var wait;
+  if (this.delayed[identifier]) {
+    var now = (new Date()).getTime();
+    wait = this.delayed[identifier] - now;
+  } else {
+    wait = 10;
+  }
+
+  this.timer[identifier] = setTimeout(
+      function () { this.dequeue(identifier) }.bind(this),
+      wait
+  );
+};
+
+Smockron.prototype.dequeue = function(identifier) {
+  if (this.queue[identifier]) {
+   if (this.queue[identifier].length) {
+     var cb = this.queue[identifier].pop();
+     setImmediate(cb);
+   }
+   if (this.queue[identifier].length) {
+     this.ensureTimer(identifier);
+   } else {
+     delete this.queue[identifier];
+     delete this.timer[identifier];
+   }
+  }
+};
+
 Smockron.prototype.middleware = function(rejectCB) {
   var self = this;
   if (rejectCB === undefined) {
@@ -157,11 +203,10 @@ Smockron.prototype.middleware = function(rejectCB) {
     };
 
     if (delayTS && delayTS > now) {
-      if (delayTS > now + 5000) {
-        setImmediate(function () { rejectCB(req, res) });
+      if (delayTS > now + 5000 || !self.enqueue(identifier, next)) {
+        setTimeout(function () { rejectCB(req, res) }, 1);
         accounting.status = 'REJECTED';
       } else {
-        setTimeout(next, delayTS - now);
         accounting.status = 'DELAYED';
         accounting.delayTS = delayTS;
       }
