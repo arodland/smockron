@@ -1,1 +1,3 @@
 runtime: node010
+
+run_master: exec node bin/master.js

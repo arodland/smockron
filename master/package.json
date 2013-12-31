@@ -4,6 +4,8 @@
   "dependencies": {
     "zmq": "2.5.x",
     "then-redis": "0.3.x",
-    "when": "*"
+    "when": "2.x",
+    "config": "0.4.x",
+    "yaml": "0.2.x"
   }
 }
