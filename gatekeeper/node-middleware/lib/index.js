@@ -135,7 +135,8 @@ Smockron.prototype._onControl = function(msg) {
 };
 
 Smockron.prototype._delayUntil = function(msg) {
-  this.delayed[msg.identifier] = msg.ts;
+  if (this.delayed[msg.identifier] === undefined || msg.ts > this.delayed[msg.identifier])
+    this.delayed[msg.identifier] = msg.ts;
 };
 
 Smockron.prototype.middleware = function(rejectCB) {
