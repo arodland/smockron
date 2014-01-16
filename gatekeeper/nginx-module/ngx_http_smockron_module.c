@@ -74,8 +74,6 @@ static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf) {
   if (conf == NULL) {
     return NGX_CONF_ERROR;
   }
-  conf->server = NGX_CONF_UNSET;
-  conf->zone = NGX_CONF_UNSET;
   return conf;
 }
 
@@ -83,9 +81,9 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
   ngx_http_smockron_conf_t *prev = parent;
   ngx_http_smockron_conf_t *conf = child;
 
-  ngx_merge_conf_flag_value(conf->enabled, prev->enabled, 0);
-  ngx_merge_conf_str_value(conf->server, prev->server, ngx_string("tcp://localhost:10004"));
-  ngx_merge_conf_str_value(conf->zone, prev->zone, ngx_string("default"));
+  ngx_conf_merge_value(conf->enabled, prev->enabled, 0);
+  ngx_conf_merge_str_value(conf->server, prev->server, "tcp://localhost:10004");
+  ngx_conf_merge_str_value(conf->zone, prev->zone, "default");
 
   return NGX_CONF_OK;
 }
