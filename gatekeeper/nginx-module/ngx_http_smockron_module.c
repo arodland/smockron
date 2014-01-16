@@ -5,7 +5,7 @@
 typedef struct {
   ngx_flag_t enabled;
   ngx_str_t server;
-  ngx_str_t zone;
+  ngx_str_t domain;
 } ngx_http_smockron_conf_t;
 
 static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf);
@@ -29,11 +29,11 @@ static ngx_command_t ngx_http_smockron_commands[] = {
     NULL
   },
   {
-    ngx_string("smockron_zone"),
+    ngx_string("smockron_domain"),
     NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
     ngx_conf_set_str_slot,
     NGX_HTTP_LOC_CONF_OFFSET,
-    offsetof(ngx_http_smockron_conf_t, zone),
+    offsetof(ngx_http_smockron_conf_t, domain),
     NULL
   },
   ngx_null_command
@@ -83,7 +83,7 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
 
   ngx_conf_merge_value(conf->enabled, prev->enabled, 0);
   ngx_conf_merge_str_value(conf->server, prev->server, "tcp://localhost:10004");
-  ngx_conf_merge_str_value(conf->zone, prev->zone, "default");
+  ngx_conf_merge_str_value(conf->domain, prev->domain, "default");
 
   return NGX_CONF_OK;
 }
