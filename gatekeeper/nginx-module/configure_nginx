@@ -1,0 +1,6 @@
+#!/bin/sh
+MODDIR=$(dirname $(readlink -f "$0"))
+NGINX_SRC="$1"
+shift
+cd $NGINX_SRC
+./configure --add-module="$MODDIR" "$@"
