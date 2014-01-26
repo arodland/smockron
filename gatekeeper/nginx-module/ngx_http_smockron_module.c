@@ -6,6 +6,8 @@ typedef struct {
   ngx_flag_t enabled;
   ngx_str_t server;
   ngx_str_t domain;
+  ngx_str_t identifier_varname;
+  ngx_int_t identifier_idx;
 } ngx_http_smockron_conf_t;
 
 static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf);
@@ -35,6 +37,14 @@ static ngx_command_t ngx_http_smockron_commands[] = {
     ngx_conf_set_str_slot,
     NGX_HTTP_LOC_CONF_OFFSET,
     offsetof(ngx_http_smockron_conf_t, domain),
+    NULL
+  },
+  {
+    ngx_string("smockron_identifier"),
+    NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+    ngx_conf_set_str_slot,
+    NGX_HTTP_LOC_CONF_OFFSET,
+    offsetof(ngx_http_smockron_conf_t, identifier_varname),
     NULL
   },
   ngx_null_command
@@ -75,9 +85,28 @@ static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf) {
   if (conf == NULL) {
     return NGX_CONF_ERROR;
   }
+  conf->identifier_idx = NGX_CONF_UNSET;
+
   ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "create_loc_conf");
 
   return conf;
+}
+
+static char *parse_variable_name(ngx_conf_t *cf, ngx_str_t str, ngx_int_t *dest) {
+  ngx_int_t idx = NGX_ERROR;
+  ngx_str_t varname;
+
+  if (str.data[0] == '$') {
+    varname.data = str.data + 1;
+    varname.len = str.len - 1;
+    idx = ngx_http_get_variable_index(cf, &varname);
+  }
+  if (idx == NGX_ERROR) {
+    return NGX_CONF_ERROR;
+  } else {
+    *dest = idx;
+    return NGX_CONF_OK;
+  }
 }
 
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
@@ -87,6 +116,13 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
   ngx_conf_merge_value(conf->enabled, prev->enabled, 0);
   ngx_conf_merge_str_value(conf->server, prev->server, "tcp://localhost:10004");
   ngx_conf_merge_str_value(conf->domain, prev->domain, "default");
+  ngx_conf_merge_str_value(conf->identifier_varname, prev->identifier_varname, "$remote_addr");
+
+  if (parse_variable_name(cf, conf->identifier_varname, &(conf->identifier_idx)) == NGX_CONF_ERROR) {
+    ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+        "Invalid identifier varname \"%s\"", conf->identifier_varname.data);
+    return NGX_CONF_ERROR;
+  }
   
   ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "merge_loc_conf");
 
@@ -95,9 +131,17 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
 
 static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   ngx_http_smockron_conf_t *smockron_config;
-  smockron_config = ngx_http_get_module_loc_conf(r, ngx_http_smockron_module);
+  ngx_http_variable_value_t *ident;
 
-  ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, (const char *)(smockron_config->domain.data));
+  smockron_config = ngx_http_get_module_loc_conf(r, ngx_http_smockron_module);
+  ident = ngx_http_get_indexed_variable(r, smockron_config->identifier_idx);
+  if (ident == NULL || ident->not_found) {
+    ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
+        "Variable not found: \"%s\"", smockron_config->identifier_varname.data);
+  } else {
+    ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
+        "Var \"%s\"=\"%s\"", smockron_config->identifier_varname.data, ident->data);
+  }
 
   return NGX_DECLINED;
 }
