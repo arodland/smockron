@@ -2,6 +2,7 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 #include <zmq.h>
+#include <assert.h>
 
 typedef struct {
   ngx_flag_t enabled;
@@ -15,10 +16,12 @@ static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle);
+void ngx_http_smockron_control_read(ngx_event_t *ev);
 
 static void *zmq_context;
 static void *accounting_socket;
 static void *control_socket;
+static ngx_connection_t *control_connection;
 
 static ngx_command_t ngx_http_smockron_commands[] = {
   {
@@ -190,6 +193,9 @@ static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf) {
 static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
   zmq_context = zmq_ctx_new();
   accounting_socket = zmq_socket(zmq_context, ZMQ_PUB);
+  int controlfd;
+  size_t fdsize;
+
   if (zmq_connect(accounting_socket, "tcp://localhost:10004") != 0) {
     ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect accounting socket");
     return NGX_ERROR;
@@ -199,6 +205,38 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
     ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect control socket");
     return NGX_ERROR;
   }
+  zmq_setsockopt(control_socket, ZMQ_SUBSCRIBE, "", 0);
+  fdsize = sizeof(int);
+  zmq_getsockopt(control_socket, ZMQ_FD, &controlfd, &fdsize);
+  control_connection = ngx_get_connection(controlfd, cycle->log);
+  control_connection->read->handler = ngx_http_smockron_control_read;
+  control_connection->read->log = cycle->log;
+  ngx_add_event(control_connection->read, NGX_READ_EVENT, 0);
+
   ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "initproc");
   return NGX_OK;
+}
+
+void ngx_http_smockron_control_read(ngx_event_t *ev) {
+  int events;
+  size_t events_size = sizeof(events);
+
+  zmq_getsockopt(control_socket, ZMQ_EVENTS, &events, &events_size);
+
+  while (events & ZMQ_POLLIN) {
+    int more;
+    size_t more_size = sizeof(more);
+    char buf[256];
+
+    do {
+      bzero(buf, sizeof(buf));
+      int rc = zmq_recv(control_socket, buf, sizeof(buf), 0);
+      assert(rc != -1);
+      rc = zmq_getsockopt(control_socket, ZMQ_RCVMORE, &more, &more_size);
+      assert(rc == 0);
+      fprintf(stderr, "msg: %s, more: %d\n", buf, more);
+    } while (more);
+    events = 0;
+    zmq_getsockopt(control_socket, ZMQ_EVENTS, &events, &events_size);
+  }
 }
