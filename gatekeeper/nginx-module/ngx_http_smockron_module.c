@@ -134,10 +134,15 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   ngx_http_smockron_conf_t *smockron_config;
   ngx_http_variable_value_t *ident;
 
+  if (ngx_http_get_module_ctx(r->main, ngx_http_smockron_module) != NULL)
+    return NGX_DECLINED;
+
   smockron_config = ngx_http_get_module_loc_conf(r, ngx_http_smockron_module);
 
   if (!smockron_config->enabled)
     return NGX_DECLINED;
+
+  ngx_http_set_ctx(r->main, (void *)1, ngx_http_smockron_module);
 
   ident = ngx_http_get_indexed_variable(r, smockron_config->identifier_idx);
   if (ident == NULL || ident->not_found) {
