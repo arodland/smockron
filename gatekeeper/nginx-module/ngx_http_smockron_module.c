@@ -16,8 +16,8 @@ static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf);
 
 static ngx_command_t ngx_http_smockron_commands[] = {
   {
-    ngx_string("smockron_enabled"),
-    NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
+    ngx_string("smockron"),
+    NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
     ngx_conf_set_flag_slot,
     NGX_HTTP_LOC_CONF_OFFSET,
     offsetof(ngx_http_smockron_conf_t, enabled),
@@ -25,7 +25,7 @@ static ngx_command_t ngx_http_smockron_commands[] = {
   },
   {
     ngx_string("smockron_server"),
-    NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+    NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
     ngx_conf_set_str_slot,
     NGX_HTTP_LOC_CONF_OFFSET,
     offsetof(ngx_http_smockron_conf_t, server),
@@ -33,7 +33,7 @@ static ngx_command_t ngx_http_smockron_commands[] = {
   },
   {
     ngx_string("smockron_domain"),
-    NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+    NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
     ngx_conf_set_str_slot,
     NGX_HTTP_LOC_CONF_OFFSET,
     offsetof(ngx_http_smockron_conf_t, domain),
@@ -41,7 +41,7 @@ static ngx_command_t ngx_http_smockron_commands[] = {
   },
   {
     ngx_string("smockron_identifier"),
-    NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+    NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
     ngx_conf_set_str_slot,
     NGX_HTTP_LOC_CONF_OFFSET,
     offsetof(ngx_http_smockron_conf_t, identifier_varname),
@@ -86,6 +86,7 @@ static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf) {
     return NGX_CONF_ERROR;
   }
   conf->identifier_idx = NGX_CONF_UNSET;
+  conf->enabled = NGX_CONF_UNSET;
 
   ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "create_loc_conf");
 
@@ -134,6 +135,10 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   ngx_http_variable_value_t *ident;
 
   smockron_config = ngx_http_get_module_loc_conf(r, ngx_http_smockron_module);
+
+  if (!smockron_config->enabled)
+    return NGX_DECLINED;
+
   ident = ngx_http_get_indexed_variable(r, smockron_config->identifier_idx);
   if (ident == NULL || ident->not_found) {
     ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
