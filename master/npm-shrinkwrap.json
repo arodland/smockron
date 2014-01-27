@@ -13,16 +13,14 @@
       }
     },
     "then-redis": {
-      "version": "0.3.9",
+      "version": "0.3.10",
       "from": "then-redis@0.3.x",
+      "resolved": "https://registry.npmjs.org/then-redis/-/then-redis-0.3.10.tgz",
       "dependencies": {
-        "when": {
-          "version": "2.0.1",
-          "from": "when@2.0.x"
-        },
         "hiredis": {
-          "version": "0.1.15",
-          "from": "hiredis@0.1.15",
+          "version": "0.1.16",
+          "from": "hiredis@0.1.16",
+          "resolved": "https://registry.npmjs.org/hiredis/-/hiredis-0.1.16.tgz",
           "dependencies": {
             "bindings": {
               "version": "1.1.1",
@@ -33,9 +31,18 @@
       }
     },
     "when": {
-      "version": "2.7.0",
-      "from": "when@*",
-      "resolved": "https://registry.npmjs.org/when/-/when-2.7.0.tgz"
+      "version": "2.7.1",
+      "from": "when@2.x",
+      "resolved": "https://registry.npmjs.org/when/-/when-2.7.1.tgz"
+    },
+    "config": {
+      "version": "0.4.35",
+      "from": "config@0.4.x",
+      "resolved": "https://registry.npmjs.org/config/-/config-0.4.35.tgz"
+    },
+    "yaml": {
+      "version": "0.2.3",
+      "from": "yaml@0.2.x"
     }
   }
 }

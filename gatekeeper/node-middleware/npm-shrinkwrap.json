@@ -4,11 +4,11 @@
   "dependencies": {
     "zmq": {
       "version": "2.5.1",
-      "from": "zmq@2.5.x",
+      "from": "zmq@2.5.1",
       "dependencies": {
         "set-immediate": {
           "version": "0.1.1",
-          "from": "set-immediate@*"
+          "from": "set-immediate@0.1.1"
         }
       }
     }
