@@ -1,6 +1,7 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
+#include <zmq.h>
 
 typedef struct {
   ngx_flag_t enabled;
@@ -13,6 +14,11 @@ typedef struct {
 static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf);
+static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle);
+
+static void *zmq_context;
+static void *accounting_socket;
+static void *control_socket;
 
 static ngx_command_t ngx_http_smockron_commands[] = {
   {
@@ -71,7 +77,7 @@ ngx_module_t ngx_http_smockron_module = {
   NGX_HTTP_MODULE,
   NULL,                          /* init master */
   NULL,                          /* init module */
-  NULL,                          /* init process */
+  ngx_http_smockron_initproc,    /* init process */
   NULL,                          /* init thread */
   NULL,                          /* exit thread */
   NULL,                          /* exit process */
@@ -149,8 +155,16 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
     ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
         "Variable not found: \"%s\"", smockron_config->identifier_varname.data);
   } else {
+    char time[32];
+    int timelen = snprintf(time, 32, "%ld", r->start_sec * 1000 + r->start_msec);
     ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
         "Var \"%s\"=\"%s\"", smockron_config->identifier_varname.data, ident->data);
+    zmq_send(accounting_socket, smockron_config->domain.data, smockron_config->domain.len + 1, ZMQ_SNDMORE);
+    zmq_send(accounting_socket, "ACCEPTED", 8, ZMQ_SNDMORE);
+    zmq_send(accounting_socket, ident->data, ident->len, ZMQ_SNDMORE);
+    zmq_send(accounting_socket, time, timelen, ZMQ_SNDMORE);
+    zmq_send(accounting_socket, "", 0, ZMQ_SNDMORE);
+    zmq_send(accounting_socket, "", 0, 0);
   }
 
   return NGX_DECLINED;
@@ -170,5 +184,21 @@ static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf) {
 
   ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "smockron_init");
 
+  return NGX_OK;
+}
+
+static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
+  zmq_context = zmq_ctx_new();
+  accounting_socket = zmq_socket(zmq_context, ZMQ_PUB);
+  if (zmq_connect(accounting_socket, "tcp://localhost:10004") != 0) {
+    ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect accounting socket");
+    return NGX_ERROR;
+  }
+  control_socket = zmq_socket(zmq_context, ZMQ_SUB);
+  if (zmq_connect(control_socket, "tcp://localhost:10005") != 0) {
+    ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect control socket");
+    return NGX_ERROR;
+  }
+  ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "initproc");
   return NGX_OK;
 }
