@@ -4,17 +4,15 @@
 <meta charset="utf-8">
 <title>Smockron - Distributed Rate Limiting</title>
 <link rel="stylesheet" type="text/css" href="css/cascade/build-full.min.css">
+<link rel="stylesheet" type="text/css" href="css/site.css">
 <!--[if lt IE 8]><link rel="stylesheet" href="css/cascade/icons-ie7.min.css"><![endif]-->
 <!--[if lt IE 9]><script src="js/iehtmlshiv.js"></script><![endif]-->
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-.site-body, .masthead .introduction {
-  font-size: 16px;
-}
 </style>
 </head>
 <body>
-<div class="site-header">
+<div class="site-header gradient">
   <div class="site-center">
     <ul class="nav blocks">
       <li>
@@ -29,7 +27,7 @@
     </ul>
   </div>
 </div>
-<div class="masthead">
+<div class="masthead gradient">
   <div class="site-center">
     <div class="cell">
       <h1>Smockron - Distributed Rate Limiting</h1>
@@ -50,29 +48,147 @@
     </div>
   </div>
   <div class="site-center">
-    <div class="col width-1of4 mobile-width-1of2">
-      <div class="cell">
-        <h3>Distributed</h3>
-        <p>Smockron doesn't introduce a single point of failure to your system.</p>
-      </div>
-    </div>
-    <div class="col width-1of4 mobile-width-1of2">
+    <div class="col width-1of3 mobile-width-fill">
       <div class="cell">
         <h3>Fail-safe</h3>
-        <p>In the case of server or network outages, Smockron makes sure your application stays accessible.</p>
+        <p>In the case of server or network outages, Smockron makes sure your application stays accessible.
+        Distributed design doesn't add a single point of failure.</p>
       </div>
     </div>
-    <div class="col width-1of4 mobile-width-1of2">
+    <div class="col width-1of3 mobile-width-fill">
       <div class="cell">
         <h3>Lightweight</h3>
         <p>Smockron uses minimal resources, and causes virtually no slowdown for users who aren't being throttled.</p>
       </div>
     </div>
-    <div class="col width-1of4 mobile-width-1of2">
+    <div class="col width-1of3 mobile-width-fill">
       <div class="cell">
         <h3>Flexible</h3>
         <p>Smockron works no matter what language your application is written in, or what technology you use for
         load-balancing.</p>
+    </div>
+  </div>
+  <div class="site-center">
+    <div class="col">
+      <div class="cell">
+        <h2>How does it work?</h2>
+        <p>
+        Application servers use <a href="http://zeromq.org/">ZeroMQ</a> to send information about incoming requests to a
+        Smockron master server. When the master detects that a client is accessing a resource too frequently, it sends a
+        message to servers with that resource instructing them to deny that client for a period of time.
+        </p>
+        <p>
+        For more information about the design of Smockron, see the <a
+          href="https://github.com/arodland/smockron/wiki/Design">Smockron design documentation</a>.
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="site-center">
+    <div class="col">
+      <div class="cell">
+        <h2>What do I need?</h2>
+        <p>
+        The Smockron master is written in <a href="http://nodejs.org/">Node</a> and uses <a
+          href="http://redis.io">Redis</a> as a data store.
+        </p>
+        <p>
+        The Smockron gatekeeper exists in two versions: as a Node <a href="http://expressjs.com">Express</a> middleware,
+        and as an <a href="http://wiki.nginx.org/">Nginx</a> plugin.
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="site-center">
+    <div class="col">
+      <div class="cell">
+        <h2>Is it ready to use?</h2>
+        <p>
+        Smockron is alpha software under active development. It's not ready for production use quite yet.
+        The master and the Node/Express gatekeeper have a basic set of features and are reasonably stable. The nginx
+        gatekeeper is under heavy development. Adventurous people are encouraged to try it out and share their
+        experiences.
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="site-center">
+    <div class="col">
+      <div class="cell">
+        <h2>How can I try it?</h2>
+        <div class="col">
+          <div class="cell">
+            <h3>Getting the code</h3>
+            Check it out from <a href="https://github.com/arodland/smockron">GitHub</a>:
+            <pre>git clone https://github.com/arodland/smockron</pre>
+          </div>
+        </div>
+        <div class="col width-1of3 mobile-width-full">
+          <div class="cell">
+            <h3>Master</h3>
+            <h4>Build</h4>
+            <pre>
+cd smockron/master
+npm install</pre>
+            <h4>Configure</h4>
+            <pre>vi config/default.yaml</pre>
+            <h4>Run</h4>
+            <pre>
+node bin/master.js</pre>
+          </div>
+        </div>
+        <div class="col width-1of3 mobile-width-full">
+          <div class="cell">
+            <h3>Express middleware</h3>
+            <h4>Build</h4>
+            <pre>
+cd smockron/gatekeeper/node-middleware
+npm install</pre>
+            <h4>Configure</h4>
+            <pre>
+var Smockron = require('smockron');
+var smockron = new Smockron({
+    server: "smockron.example.com",
+    domain: "myapp",
+    identifierCB: Smockron.REMOTE_ADDR
+});
+app.use(smockron.middleware());</pre>
+            <h4>Run the example app</h4>
+            <pre>
+node test.js</pre>
+          </div>
+        </div>
+        <div class="col width-1of3 mobile-width-full">
+          <div class="cell">
+            <h3>Nginx module</h3>
+            <h4>Build</h4>
+            <p>
+            Download and unpack <a href="http://wiki.nginx.org/">nginx</a>.
+            </p>
+            <pre>
+cd smockron/gatekeeper/nginx-module
+./configure-nginx /path/to/nginx
+./build-nginx /path/to/nginx</pre>
+            <h4>Configure</h4>
+            <p>In nginx.conf:</p>
+            <pre>
+smockron on
+smockron_server smockron.example.com
+smockron_domain myapp</pre>
+            <h4>Run the example config</h4>
+            <pre>
+./run-nginx /path/to/nginx</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="site-footer gradient">
+  <div class="site-center">
+    <div class="cell">
+      Smockron &copy; 2013-2014 Andrew Rodland. Inspiration and support provided by <a
+        href="http://code.shutterstock.com/">Shutterstock</a>.
     </div>
   </div>
 </div>

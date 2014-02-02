@@ -1,0 +1,15 @@
+.site-body {
+  font-size: 15px;
+}
+.cell {
+  margin: 12px;
+}
+@media (min-width: 1200px) {
+  .cell {
+    margin: 18px;
+  }
+}
+
+body,p,button,input,select,textarea {
+  font-family: Verdana,"Bitstream Vera Sans",Helvetica,Arial,sans-serif;
+}
