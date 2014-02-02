@@ -9,6 +9,15 @@
 <!--[if lt IE 9]><script src="js/iehtmlshiv.js"></script><![endif]-->
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
+.build-instructions .panel {
+  margin: 0.5em;
+}
+.build-instructions pre {
+  padding: 0.25em;
+}
+.build-instructions h4 {
+  line-height: 150%;
+}
 </style>
 </head>
 <body>
@@ -113,38 +122,44 @@
   </div>
   <div class="site-center">
     <div class="col">
-      <div class="cell">
+      <div class="cell build-instructions">
         <h2>How can I try it?</h2>
         <div class="col">
-          <div class="cell">
-            <h3>Getting the code</h3>
-            Check it out from <a href="https://github.com/arodland/smockron">GitHub</a>:
-            <pre>git clone https://github.com/arodland/smockron</pre>
+          <div class="panel">
+            <div class="cell">
+              <h3>Getting the code</h3>
+              <p>Check it out from <a href="https://github.com/arodland/smockron">GitHub</a>:</p>
+              <pre>git clone https://github.com/arodland/smockron</pre>
+            </div>
           </div>
         </div>
         <div class="col width-1of3 mobile-width-full">
-          <div class="cell">
-            <h3>Master</h3>
-            <h4>Build</h4>
-            <pre>
+          <div class="panel">
+            <div class="cell">
+              <h3>Master</h3>
+              <h4>Build</h4>
+              <pre>
 cd smockron/master
 npm install</pre>
-            <h4>Configure</h4>
-            <pre>vi config/default.yaml</pre>
-            <h4>Run</h4>
-            <pre>
+              <h4>Configure</h4>
+              <pre>
+vi config/default.yaml</pre>
+              <h4>Run</h4>
+              <pre>
 node bin/master.js</pre>
+            </div>
           </div>
         </div>
         <div class="col width-1of3 mobile-width-full">
-          <div class="cell">
-            <h3>Express middleware</h3>
-            <h4>Build</h4>
-            <pre>
+          <div class="panel">
+            <div class="cell">
+              <h3>Express middleware</h3>
+              <h4>Build</h4>
+              <pre>
 cd smockron/gatekeeper/node-middleware
 npm install</pre>
-            <h4>Configure</h4>
-            <pre>
+              <h4>Configure</h4>
+              <pre>
 var Smockron = require('smockron');
 var smockron = new Smockron({
     server: "smockron.example.com",
@@ -152,31 +167,34 @@ var smockron = new Smockron({
     identifierCB: Smockron.REMOTE_ADDR
 });
 app.use(smockron.middleware());</pre>
-            <h4>Run the example app</h4>
-            <pre>
+              <h4>Run the example app</h4>
+              <pre>
 node test.js</pre>
+            </div>
           </div>
         </div>
         <div class="col width-1of3 mobile-width-full">
-          <div class="cell">
-            <h3>Nginx module</h3>
-            <h4>Build</h4>
-            <p>
-            Download and unpack <a href="http://wiki.nginx.org/">nginx</a>.
-            </p>
-            <pre>
+          <div class="panel">
+            <div class="cell">
+              <h3>Nginx module</h3>
+              <h4>Build</h4>
+              <p>
+              Download and unpack <a href="http://wiki.nginx.org/">nginx</a>.
+              </p>
+              <pre>
 cd smockron/gatekeeper/nginx-module
 ./configure-nginx /path/to/nginx
 ./build-nginx /path/to/nginx</pre>
-            <h4>Configure</h4>
-            <p>In nginx.conf:</p>
-            <pre>
+              <h4>Configure</h4>
+              <p>In nginx.conf:</p>
+              <pre>
 smockron on
 smockron_server smockron.example.com
 smockron_domain myapp</pre>
-            <h4>Run the example config</h4>
-            <pre>
+              <h4>Run the example config</h4>
+              <pre>
 ./run-nginx /path/to/nginx</pre>
+            </div>
           </div>
         </div>
       </div>
