@@ -112,7 +112,7 @@ Smockron.DataStore.prototype.logAccess = function(opts) {
   self.redis.get(key).then(function (val) {
     var next;
     if (val === undefined || val === null || val < opts.now - opts.burst * opts.interval) {
-      next = opts.now - opts.burst * opts.interval;
+      next = opts.now - (opts.burst - 1) * opts.interval;
     } else {
       next = parseInt(val, 10) + opts.interval;
     }
