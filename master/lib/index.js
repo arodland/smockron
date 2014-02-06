@@ -108,15 +108,16 @@ Smockron.DataStore.prototype.logAccess = function(opts) {
   var key = this._getKey(opts);
   // TODO: WATCH key, do the SET in a MULTI, and retry if the MULTI was aborted by
   // someone else modifying key
-  this.redis.get(key).then(function (val) {
+  var self = this;
+  self.redis.get(key).then(function (val) {
     var next;
     if (val === undefined || val < opts.now - opts.burst * opts.interval) {
       next = opts.now - opts.burst * opts.interval;
     } else {
       next = val + opts.interval;
     }
-    this.redis.set(key, next);
-    this.redis.pexpireat(key, next + opts.burst * opts.interval);
+    self.redis.set(key, next);
+    self.redis.pexpireat(key, opts.now + opts.burst * opts.interval);
   });
 };
 
