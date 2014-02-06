@@ -106,15 +106,24 @@ Smockron.DataStore.prototype._getKey = function(opts) {
 
 Smockron.DataStore.prototype.logAccess = function(opts) {
   var key = this._getKey(opts);
-  this.redis.zadd(key, opts.ts, opts.ts);
-  this.redis.zremrangebyrank(key, 0, 0-(opts.burst + 1));
-  this.redis.zremrangebyscore(key, '-inf', '(' + (opts.now - opts.burst * opts.interval));
-  this.redis.pexpireat(key, opts.now + opts.burst * opts.interval);
+  // TODO: WATCH key, do the SET in a MULTI, and retry if the MULTI was aborted by
+  // someone else modifying key
+  var self = this;
+  self.redis.get(key).then(function (val) {
+    var next;
+    if (val === undefined || val === null || val < opts.now - opts.burst * opts.interval) {
+      next = opts.now - (opts.burst - 1) * opts.interval;
+    } else {
+      next = parseInt(val, 10) + opts.interval;
+    }
+    self.redis.set(key, next);
+    self.redis.pexpireat(key, opts.now + opts.burst * opts.interval);
+  });
 };
 
-Smockron.DataStore.prototype.getAccess = function(opts) {
+Smockron.DataStore.prototype.getNext = function(opts) {
   var key = this._getKey(opts);
-  return this.redis.zrange(key, 0 - opts.burst, -1);
+  return this.redis.get(key);
 };
 
 /* END DATASTORE */
@@ -176,14 +185,16 @@ Smockron.Master.prototype._onAccounting = function(msg) {
 };
 
 Smockron.Master.prototype.shouldDelay = function(domainName, identifier, domain, now) {
-  return this.dataStore.getAccess({
+  return this.dataStore.getNext({
     domain: domainName,
     identifier: identifier,
     burst: domain.burst
-  }).then(function (prev) {
-    if (prev.length < domain.burst) // Haven't filled burst yet
+  }).then(function (next) {
+    if (next === undefined || next === null || next <= now) {
       return when.reject();
-    return Math.max(now, prev[prev.length - 1]) + domain.interval;
+    } else {
+      return next;
+    }
   }, function(e) {
     return when.reject(e);
   }
