@@ -111,7 +111,7 @@ Smockron.DataStore.prototype.logAccess = function(opts) {
   var self = this;
   self.redis.get(key).then(function (val) {
     var next;
-    if (val === undefined || val < opts.now - opts.burst * opts.interval) {
+    if (val === undefined || val === null || val < opts.now - opts.burst * opts.interval) {
       next = opts.now - opts.burst * opts.interval;
     } else {
       next = val + opts.interval;
@@ -190,7 +190,7 @@ Smockron.Master.prototype.shouldDelay = function(domainName, identifier, domain,
     identifier: identifier,
     burst: domain.burst
   }).then(function (next) {
-    if (next === undefined) {
+    if (next === undefined || next === null || next <= now) {
       return when.reject();
     } else {
       return next;
