@@ -114,7 +114,7 @@ Smockron.DataStore.prototype.logAccess = function(opts) {
     if (val === undefined || val === null || val < opts.now - opts.burst * opts.interval) {
       next = opts.now - opts.burst * opts.interval;
     } else {
-      next = val + opts.interval;
+      next = parseInt(val, 10) + opts.interval;
     }
     self.redis.set(key, next);
     self.redis.pexpireat(key, opts.now + opts.burst * opts.interval);
