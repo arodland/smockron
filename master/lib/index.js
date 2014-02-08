@@ -132,7 +132,7 @@ Smockron.DataStore.prototype.execScript = function(sha, opts) {
   return this.redis.evalsha(
       sha,
       1, key,
-      opts.now, opts.interval, opts.burst
+      Math.max(opts.ts, opts.now), opts.interval, opts.burst
   );
 };
 
