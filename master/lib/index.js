@@ -194,24 +194,25 @@ Smockron.Master.prototype._onAccounting = function(msg) {
     ts = msg.delayTS;
   }
 
-  this.dataStore.logAccess({
+  var self = this;
+
+  self.dataStore.logAccess({
     domain: msg.domain,
     identifier: msg.identifier,
     ts: ts,
     interval: domain.interval,
     burst: domain.burst,
     now: now
+  }).then(function (delayUntil) {
+    if (delayUntil > now) {
+      self.server.sendControl({
+        domain: msg.domain,
+        identifier: msg.identifier,
+        command: 'DELAY_UNTIL',
+        args: [ delayUntil ]
+      });
+    }
   });
-
-  var self = this;
-  this.shouldDelay(msg.domain, msg.identifier, domain, now).then(function (delayUntil) {
-    self.server.sendControl({
-      domain: msg.domain,
-      identifier: msg.identifier,
-      command: 'DELAY_UNTIL',
-      args: [ delayUntil ]
-    });
-  }, function (e) { if (e) console.warn(e) });
 };
 
 Smockron.Master.prototype.shouldDelay = function(domainName, identifier, domain, now) {
