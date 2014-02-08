@@ -104,21 +104,51 @@ Smockron.DataStore.prototype._getKey = function(opts) {
   return 'throttle;' + opts.domain + ';' + opts.identifier;
 };
 
-Smockron.DataStore.prototype.logAccess = function(opts) {
-  var key = this._getKey(opts);
-  // TODO: WATCH key, do the SET in a MULTI, and retry if the MULTI was aborted by
-  // someone else modifying key
+var _luaScript = [
+  "local key, now, interval, burst = KEYS[1], ARGV[1], ARGV[2], ARGV[3]",
+  "local prev = redis.call('get', key)",
+  "local new",
+  "if prev and prev >= now - burst * interval then",
+  "  new = prev + interval",
+  "else",
+  "  new = now - (burst - 1) * interval",
+  "end",
+  "  redis.call('set', key, new)",
+  "  redis.call('pexpireat', key, now + burst * interval)",
+  "  return new"
+].join("\n");
+
+Smockron.DataStore.prototype.loadLuaScript = function() {
   var self = this;
-  self.redis.get(key).then(function (val) {
-    var next;
-    if (val === undefined || val === null || val < opts.now - opts.burst * opts.interval) {
-      next = opts.now - (opts.burst - 1) * opts.interval;
-    } else {
-      next = parseInt(val, 10) + opts.interval;
-    }
-    self.redis.set(key, next);
-    self.redis.pexpireat(key, opts.now + opts.burst * opts.interval);
+  return self.redis.script('load', _luaScript).then(function (sha) {
+    self.luaScriptSHA = sha;
+    return sha;
   });
+};
+
+Smockron.DataStore.prototype.execScript = function(sha, opts) {
+  var key = this._getKey(opts);
+
+  return this.redis.evalsha(
+      sha,
+      1, key,
+      opts.now, opts.interval, opts.burst
+  );
+};
+
+Smockron.DataStore.prototype.logAccess = function(opts) {
+  var self = this;
+  var getSha = self.luaScriptSHA ? self.luaScriptSHA : self.loadLuaScript();
+  return when(getSha).then(function (sha) {
+    return self.execScript(sha, opts).catch(function (err) {
+      if (err.message.match(/NOSCRIPT/)) {
+        delete self.luaScriptSHA;
+        return self.logAccess(opts); // Try again
+      } else {
+        return when.reject(err);
+      }
+    })
+  }).catch(console.warn);
 };
 
 Smockron.DataStore.prototype.getNext = function(opts) {
