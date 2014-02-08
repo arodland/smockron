@@ -108,7 +108,7 @@ var _luaScript = [
   "local key, now, interval, burst = KEYS[1], ARGV[1], ARGV[2], ARGV[3]",
   "local prev = redis.call('get', key)",
   "local new",
-  "if prev and prev >= now - burst * interval then",
+  "if prev and tonumber(prev) >= now - burst * interval then",
   "  new = prev + interval",
   "else",
   "  new = now - (burst - 1) * interval",
