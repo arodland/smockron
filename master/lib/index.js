@@ -2,7 +2,8 @@ var zmq = require('zmq'),
     redis = require('then-redis'),
     when = require('when'),
     util = require('util'),
-    events = require('events');
+    events = require('events'),
+    statsd = require('node-statsd').StatsD;
 
 module.exports = Smockron;
 
@@ -158,6 +159,23 @@ Smockron.DataStore.prototype.getNext = function(opts) {
 
 /* END DATASTORE */
 
+/* STATS */
+
+Smockron.Stats = function (opts) {
+  this.statsd = new statsd(opts);
+};
+
+Smockron.Stats.prototype.logAccess = function(msg) {
+  this.statsd.increment('request.status.' + msg.status);
+  this.statsd.increment('request.total');
+  if (msg.status == 'DELAYED') {
+    var delayedBy = msg.delayTS - msg.rcvTS;
+    this.statsd.timing('request.delayed_by', delayedBy);
+  }
+};
+
+/* END STATS */
+
 Smockron.Master = function(opts) {
   this.server = new Smockron.Server({
     listen: opts.listen
@@ -166,6 +184,10 @@ Smockron.Master = function(opts) {
   this.dataStore = new Smockron.DataStore({
     server: opts.dataStore
   });
+
+  if (opts.stats) {
+    this.stats = new Smockron.Stats(opts.stats);
+  }
 
   this.domains = opts.domains;
 
@@ -213,6 +235,11 @@ Smockron.Master.prototype._onAccounting = function(msg) {
       });
     }
   });
+
+  if (self.stats) {
+    self.stats.logAccess(msg);
+  }
+
 };
 
 Smockron.Master.prototype.shouldDelay = function(domainName, identifier, domain, now) {

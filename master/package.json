@@ -6,6 +6,7 @@
     "then-redis": "0.3.x",
     "when": "2.x",
     "config": "0.4.x",
-    "yaml": "0.2.x"
+    "yaml": "0.2.x",
+    "node-statsd": "0.0.x"
   }
 }

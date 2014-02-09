@@ -43,6 +43,11 @@
     "yaml": {
       "version": "0.2.3",
       "from": "yaml@0.2.x"
+    },
+    "node-statsd": {
+      "version": "0.0.7",
+      "from": "node-statsd@0.0.x",
+      "resolved": "https://registry.npmjs.org/node-statsd/-/node-statsd-0.0.7.tgz"
     }
   }
 }

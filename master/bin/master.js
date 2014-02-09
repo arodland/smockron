@@ -4,7 +4,8 @@ var Smockron = require('../lib'),
 var master = new Smockron.Master({
     listen: config.server.listen,
     dataStore: config.datastore.host,
-    domains: config.domains
+    domains: config.domains,
+    stats: config.stats
 });
 
 master.listen();
