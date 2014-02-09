@@ -6,5 +6,5 @@ domains:
   default:
     interval: 1000
     burst: 10
-statsd:
+stats:
   host: localhost
