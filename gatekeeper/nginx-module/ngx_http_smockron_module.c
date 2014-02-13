@@ -161,7 +161,7 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
     char time[32];
     int timelen = snprintf(time, 32, "%ld", r->start_sec * 1000 + r->start_msec);
     ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
-        "Var \"%s\"=\"%s\"", smockron_config->identifier_varname.data, ident->data);
+        "Var \"%*s\"=\"%*s\"", smockron_config->identifier_varname.len, smockron_config->identifier_varname.data, ident->len, ident->data);
     zmq_send(accounting_socket, smockron_config->domain.data, smockron_config->domain.len + 1, ZMQ_SNDMORE);
     zmq_send(accounting_socket, "ACCEPTED", 8, ZMQ_SNDMORE);
     zmq_send(accounting_socket, ident->data, ident->len, ZMQ_SNDMORE);
