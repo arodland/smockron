@@ -234,7 +234,7 @@ void ngx_http_smockron_control_read(ngx_event_t *ev) {
       assert(rc != -1);
       rc = zmq_getsockopt(control_socket, ZMQ_RCVMORE, &more, &more_size);
       assert(rc == 0);
-      fprintf(stderr, "msg: %*s, more: %d\n", len, buf, more);
+      fprintf(stderr, "msg: %*s, more: %d\n", rc, buf, more);
     } while (more);
     events = 0;
     zmq_getsockopt(control_socket, ZMQ_EVENTS, &events, &events_size);
