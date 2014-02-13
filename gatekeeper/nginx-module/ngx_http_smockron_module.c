@@ -143,7 +143,7 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   ngx_http_smockron_conf_t *smockron_config;
   ngx_http_variable_value_t *ident;
 
-  if (ngx_http_get_module_ctx(r->main, ngx_http_smockron_module) != NULL)
+  if (r->internal || ngx_http_get_module_ctx(r->main, ngx_http_smockron_module) != NULL)
     return NGX_DECLINED;
 
   smockron_config = ngx_http_get_module_loc_conf(r, ngx_http_smockron_module);
