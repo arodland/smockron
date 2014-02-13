@@ -130,7 +130,7 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
 
   if (parse_variable_name(cf, conf->identifier_varname, &(conf->identifier_idx)) == NGX_CONF_ERROR) {
     ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-        "Invalid identifier varname \"%s\"", conf->identifier_varname.data);
+        "Invalid identifier varname \"%*s\"", conf->identifier_varname.len, conf->identifier_varname.data);
     return NGX_CONF_ERROR;
   }
   
@@ -156,7 +156,7 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   ident = ngx_http_get_indexed_variable(r, smockron_config->identifier_idx);
   if (ident == NULL || ident->not_found) {
     ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
-        "Variable not found: \"%s\"", smockron_config->identifier_varname.data);
+        "Variable not found: \"%*s\"", smockron_config->identifier_varname.len, smockron_config->identifier_varname.data);
   } else {
     char time[32];
     int timelen = snprintf(time, 32, "%ld", r->start_sec * 1000 + r->start_msec);
@@ -234,7 +234,7 @@ void ngx_http_smockron_control_read(ngx_event_t *ev) {
       assert(rc != -1);
       rc = zmq_getsockopt(control_socket, ZMQ_RCVMORE, &more, &more_size);
       assert(rc == 0);
-      fprintf(stderr, "msg: %s, more: %d\n", buf, more);
+      fprintf(stderr, "msg: %*s, more: %d\n", len, buf, more);
     } while (more);
     events = 0;
     zmq_getsockopt(control_socket, ZMQ_EVENTS, &events, &events_size);
