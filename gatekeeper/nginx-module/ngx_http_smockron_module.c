@@ -8,12 +8,12 @@ typedef struct {
   ngx_flag_t enabled;
   ngx_str_t server;
   ngx_str_t domain;
-  ngx_str_t identifier_varname;
-  ngx_int_t identifier_idx;
+  ngx_http_complex_value_t identifier;
 } ngx_http_smockron_conf_t;
 
 static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
+static char *ngx_http_smockron_identifier(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle);
 void ngx_http_smockron_control_read(ngx_event_t *ev);
@@ -51,9 +51,9 @@ static ngx_command_t ngx_http_smockron_commands[] = {
   {
     ngx_string("smockron_identifier"),
     NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-    ngx_conf_set_str_slot,
+    ngx_http_smockron_identifier,
     NGX_HTTP_LOC_CONF_OFFSET,
-    offsetof(ngx_http_smockron_conf_t, identifier_varname),
+    offsetof(ngx_http_smockron_conf_t, identifier),
     NULL
   },
   ngx_null_command
@@ -94,29 +94,11 @@ static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf) {
   if (conf == NULL) {
     return NGX_CONF_ERROR;
   }
-  conf->identifier_idx = NGX_CONF_UNSET;
   conf->enabled = NGX_CONF_UNSET;
 
   ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "create_loc_conf");
 
   return conf;
-}
-
-static char *parse_variable_name(ngx_conf_t *cf, ngx_str_t str, ngx_int_t *dest) {
-  ngx_int_t idx = NGX_ERROR;
-  ngx_str_t varname;
-
-  if (str.data[0] == '$') {
-    varname.data = str.data + 1;
-    varname.len = str.len - 1;
-    idx = ngx_http_get_variable_index(cf, &varname);
-  }
-  if (idx == NGX_ERROR) {
-    return NGX_CONF_ERROR;
-  } else {
-    *dest = idx;
-    return NGX_CONF_OK;
-  }
 }
 
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
@@ -126,22 +108,54 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
   ngx_conf_merge_value(conf->enabled, prev->enabled, 0);
   ngx_conf_merge_str_value(conf->server, prev->server, "tcp://localhost:10004");
   ngx_conf_merge_str_value(conf->domain, prev->domain, "default");
-  ngx_conf_merge_str_value(conf->identifier_varname, prev->identifier_varname, "$remote_addr");
+  if (conf->identifier.value.data == NULL) {
+    if (prev->identifier.value.data == NULL) {
+      ngx_str_t value = ngx_string("$remote_addr");
+      ngx_http_compile_complex_value_t ccv;
+      ccv.cf = cf;
+      ccv.value = &value;
+      ccv.complex_value = &conf->identifier;
+      if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+        return NGX_CONF_ERROR;
+      }
+    } else {
+      conf->identifier = prev->identifier;
+    }
+  }
 
-  if (parse_variable_name(cf, conf->identifier_varname, &(conf->identifier_idx)) == NGX_CONF_ERROR) {
-    ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-        "Invalid identifier varname \"%*s\"", conf->identifier_varname.len, conf->identifier_varname.data);
+  ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "merge_loc_conf");
+
+  return NGX_CONF_OK;
+}
+
+static char *ngx_http_smockron_identifier(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+  ngx_http_smockron_conf_t *smcf = conf;
+
+  ngx_str_t *value;
+  ngx_http_compile_complex_value_t ccv;
+
+  value = cf->args->elts;
+
+  if (smcf->identifier.value.data) {
+    return "is duplicate";
+  }
+
+  ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+  ccv.cf = cf;
+  ccv.value = &value[1];
+  ccv.complex_value = &smcf->identifier;
+
+  if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
     return NGX_CONF_ERROR;
   }
-  
-  ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "merge_loc_conf");
 
   return NGX_CONF_OK;
 }
 
 static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   ngx_http_smockron_conf_t *smockron_config;
-  ngx_http_variable_value_t *ident;
+  ngx_str_t ident;
 
   if (r->internal || ngx_http_get_module_ctx(r->main, ngx_http_smockron_module) != NULL)
     return NGX_DECLINED;
@@ -153,22 +167,20 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
 
   ngx_http_set_ctx(r->main, (void *)1, ngx_http_smockron_module);
 
-  ident = ngx_http_get_indexed_variable(r, smockron_config->identifier_idx);
-  if (ident == NULL || ident->not_found) {
-    ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
-        "Variable not found: \"%*s\"", smockron_config->identifier_varname.len, smockron_config->identifier_varname.data);
-  } else {
-    char time[32];
-    int timelen = snprintf(time, 32, "%ld", r->start_sec * 1000 + r->start_msec);
-    ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
-        "Var \"%*s\"=\"%*s\"", smockron_config->identifier_varname.len, smockron_config->identifier_varname.data, ident->len, ident->data);
-    zmq_send(accounting_socket, smockron_config->domain.data, smockron_config->domain.len + 1, ZMQ_SNDMORE);
-    zmq_send(accounting_socket, "ACCEPTED", 8, ZMQ_SNDMORE);
-    zmq_send(accounting_socket, ident->data, ident->len, ZMQ_SNDMORE);
-    zmq_send(accounting_socket, time, timelen, ZMQ_SNDMORE);
-    zmq_send(accounting_socket, "", 0, ZMQ_SNDMORE);
-    zmq_send(accounting_socket, "", 0, 0);
+  if (ngx_http_complex_value(r, &smockron_config->identifier, &ident) != NGX_OK) {
+    return NGX_ERROR;
   }
+
+  char time[32];
+  int timelen = snprintf(time, 32, "%ld", r->start_sec * 1000 + r->start_msec);
+  ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
+      "Var \"%*s\"=\"%*s\"", smockron_config->identifier.value.len, smockron_config->identifier.value.data, ident.len, ident.data);
+  zmq_send(accounting_socket, smockron_config->domain.data, smockron_config->domain.len + 1, ZMQ_SNDMORE);
+  zmq_send(accounting_socket, "ACCEPTED", 8, ZMQ_SNDMORE);
+  zmq_send(accounting_socket, ident.data, ident.len, ZMQ_SNDMORE);
+  zmq_send(accounting_socket, time, timelen, ZMQ_SNDMORE);
+  zmq_send(accounting_socket, "", 0, ZMQ_SNDMORE);
+  zmq_send(accounting_socket, "", 0, 0);
 
   return NGX_DECLINED;
 }
