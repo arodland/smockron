@@ -7,8 +7,8 @@
 
 typedef struct {
   ngx_flag_t enabled;
-  ngx_str_t server;
-  ngx_int_t server_idx;
+  ngx_str_t master;
+  ngx_int_t master_idx;
   ngx_str_t domain;
   ngx_http_complex_value_t identifier;
   ngx_http_complex_value_t log_info;
@@ -17,9 +17,11 @@ typedef struct {
 } ngx_http_smockron_conf_t;
 
 typedef struct {
-  ngx_str_t server;
-  void *socket;
-} ngx_http_smockron_zmq_socket_t;
+  ngx_str_t accounting_server;
+  void *accounting_socket;
+  ngx_str_t control_server;
+  void *control_socket;
+} ngx_http_smockron_master_t;
 
 static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
@@ -33,8 +35,8 @@ void ngx_http_smockron_control_read(ngx_event_t *ev);
 static void *zmq_context;
 static void *control_socket;
 static ngx_connection_t *control_connection;
-static ngx_pool_t *ngx_http_smockron_socket_pool;
-static ngx_array_t *ngx_http_smockron_socket_array;
+static ngx_pool_t *ngx_http_smockron_master_pool;
+static ngx_array_t *ngx_http_smockron_master_array;
 
 static ngx_command_t ngx_http_smockron_commands[] = {
   {
@@ -46,11 +48,11 @@ static ngx_command_t ngx_http_smockron_commands[] = {
     NULL
   },
   {
-    ngx_string("smockron_server"),
+    ngx_string("smockron_master"),
     NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
     ngx_conf_set_str_slot,
     NGX_HTTP_LOC_CONF_OFFSET,
-    offsetof(ngx_http_smockron_conf_t, server),
+    offsetof(ngx_http_smockron_conf_t, master),
     NULL
   },
   {
@@ -134,7 +136,7 @@ static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf) {
   conf->enabled = NGX_CONF_UNSET;
   conf->max_delay = NGX_CONF_UNSET_MSEC;
   conf->status_code = NGX_CONF_UNSET;
-  conf->server_idx = NGX_CONF_UNSET;
+  conf->master_idx = NGX_CONF_UNSET;
 
   ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "create_loc_conf");
 
@@ -147,21 +149,21 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
   unsigned int i;
 
   ngx_conf_merge_value(conf->enabled, prev->enabled, 0);
-  ngx_conf_merge_str_value(conf->server, prev->server, "tcp://localhost:10004");
+  ngx_conf_merge_str_value(conf->master, prev->master, "tcp://localhost:10004");
 
-  ngx_http_smockron_zmq_socket_t *socket = ngx_http_smockron_socket_array->elts;
-  for (i = 0 ; i < ngx_http_smockron_socket_array->nelts ; i++) {
-    if (ngx_strcmp(socket[i].server.data, conf->server.data) == 0) {
-      conf->server_idx = i;
+  ngx_http_smockron_master_t *master = ngx_http_smockron_master_array->elts;
+  for (i = 0 ; i < ngx_http_smockron_master_array->nelts ; i++) {
+    if (ngx_strcmp(master[i].accounting_server.data, conf->master.data) == 0) {
+      conf->master_idx = i;
     }
   }
-  if (conf->server_idx == NGX_CONF_UNSET) {
-    socket = ngx_array_push(ngx_http_smockron_socket_array);
-    if (socket == NULL) {
+  if (conf->master_idx == NGX_CONF_UNSET) {
+    master = ngx_array_push(ngx_http_smockron_master_array);
+    if (master == NULL) {
       return NGX_CONF_ERROR;
     }
-    socket->server = conf->server;
-    conf->server_idx = ngx_http_smockron_socket_array->nelts - 1;
+    master->accounting_server = conf->master;
+    conf->master_idx = ngx_http_smockron_master_array->nelts - 1;
   }
 
   ngx_conf_merge_str_value(conf->domain, prev->domain, "default");
@@ -252,9 +254,10 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   char receive_time[32], delay_time[32];
   int receive_time_len, delay_time_len = 0;
   uint64_t request_time = get_request_time(r);
-  uint64_t next_allowed_time = get_ident_next_allowed_request(ident);
-  ngx_http_smockron_zmq_socket_t *accounting_socket = ngx_http_smockron_socket_array->elts;
-  accounting_socket += smockron_config->server_idx;
+//  uint64_t next_allowed_time = get_ident_next_allowed_request(ident);
+  uint64_t next_allowed_time = request_time + 1000;
+  ngx_http_smockron_master_t *master = ngx_http_smockron_master_array->elts;
+  master += smockron_config->master_idx;
 
   ngx_str_t status;
   ngx_int_t rc;
@@ -280,12 +283,12 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
     rc = NGX_HTTP_SERVICE_UNAVAILABLE;
   }
 
-  zmq_send(accounting_socket->socket, smockron_config->domain.data, smockron_config->domain.len + 1, ZMQ_SNDMORE);
-  zmq_send(accounting_socket->socket, status.data, status.len, ZMQ_SNDMORE);
-  zmq_send(accounting_socket->socket, ident.data, ident.len, ZMQ_SNDMORE);
-  zmq_send(accounting_socket->socket, receive_time, receive_time_len, ZMQ_SNDMORE);
-  zmq_send(accounting_socket->socket, delay_time, delay_time_len, ZMQ_SNDMORE);
-  zmq_send(accounting_socket->socket, log_info.data, log_info.len, 0);
+  zmq_send(master->accounting_socket, smockron_config->domain.data, smockron_config->domain.len + 1, ZMQ_SNDMORE);
+  zmq_send(master->accounting_socket, status.data, status.len, ZMQ_SNDMORE);
+  zmq_send(master->accounting_socket, ident.data, ident.len, ZMQ_SNDMORE);
+  zmq_send(master->accounting_socket, receive_time, receive_time_len, ZMQ_SNDMORE);
+  zmq_send(master->accounting_socket, delay_time, delay_time_len, ZMQ_SNDMORE);
+  zmq_send(master->accounting_socket, log_info.data, log_info.len, 0);
 
   return rc;
 }
@@ -332,13 +335,13 @@ static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf) {
 }
 
 static ngx_int_t ngx_http_smockron_preinit(ngx_conf_t *cf) {
-  ngx_http_smockron_socket_pool = ngx_create_pool(100*sizeof(ngx_http_smockron_zmq_socket_t), cf->log);
-  if (ngx_http_smockron_socket_pool == NULL) {
+  ngx_http_smockron_master_pool = ngx_create_pool(100*sizeof(ngx_http_smockron_master_t), cf->log);
+  if (ngx_http_smockron_master_pool == NULL) {
     return NGX_ERROR;
   }
 
-  ngx_http_smockron_socket_array = ngx_array_create(ngx_http_smockron_socket_pool, 1, sizeof(ngx_http_smockron_zmq_socket_t));
-  if (ngx_http_smockron_socket_array == NULL) {
+  ngx_http_smockron_master_array = ngx_array_create(ngx_http_smockron_master_pool, 1, sizeof(ngx_http_smockron_master_t));
+  if (ngx_http_smockron_master_array == NULL) {
     return NGX_ERROR;
   }
 
@@ -352,14 +355,14 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
   int controlfd;
   size_t fdsize;
 
-  ngx_http_smockron_zmq_socket_t *socket = ngx_http_smockron_socket_array->elts;
+  ngx_http_smockron_master_t *master = ngx_http_smockron_master_array->elts;
   unsigned int i;
 
-  for (i = 0 ; i < ngx_http_smockron_socket_array->nelts ; i++) {
-    socket[i].socket = zmq_socket(zmq_context, ZMQ_PUB);
-    if (zmq_connect(socket[i].socket, (const char *)socket[i].server.data) != 0) {
+  for (i = 0 ; i < ngx_http_smockron_master_array->nelts ; i++) {
+    master[i].accounting_socket = zmq_socket(zmq_context, ZMQ_PUB);
+    if (zmq_connect(master[i].accounting_socket, (const char *)master[i].accounting_server.data) != 0) {
       ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect accounting socket %*s: %s",
-          socket[i].server.len, socket[i].server.data, strerror(errno));
+          master[i].accounting_server.len, master[i].accounting_server.data, strerror(errno));
       return NGX_ERROR;
     }
   }
