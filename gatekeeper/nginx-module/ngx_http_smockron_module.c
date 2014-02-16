@@ -406,7 +406,7 @@ static ngx_int_t ngx_http_smockron_preinit(ngx_conf_t *cf) {
 static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
   zmq_context = zmq_ctx_new();
   int controlfd;
-  size_t fdsize;
+  size_t fdsize = sizeof(int);
 
   ngx_http_smockron_master_t *master = ngx_http_smockron_master_array->elts;
   unsigned int i,j;
@@ -420,28 +420,25 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
       return NGX_ERROR;
     }
 
-    ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Control socket: %*s",
-        master[i].control_server.len, master[i].control_server.data);
+    master[i].control_socket = zmq_socket(zmq_context, ZMQ_SUB);
+    if (zmq_connect(master[i].control_socket, (const char *)master[i].control_server.data) != 0) {
+      ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect control socket %*s: %s",
+          master[i].control_server.len, master[i].control_server.data, strerror(errno));
+      return NGX_ERROR;
+    }
 
     domain = master[i].domains->elts;
     for (j = 0 ; j < master[i].domains->nelts ; j++) {
-      ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Master %d domain %d: %*s", i, j, domain[j].len, domain[j].data);
+      zmq_setsockopt(master[i].control_socket, ZMQ_SUBSCRIBE, domain[j].data, domain[j].len);
     }
-  }
 
-  void *control_socket = zmq_socket(zmq_context, ZMQ_SUB);
-  if (zmq_connect(control_socket, "tcp://localhost:10005") != 0) {
-    ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect control socket");
-    return NGX_ERROR;
+    zmq_getsockopt(master[i].control_socket, ZMQ_FD, &controlfd, &fdsize);
+    ngx_connection_t *control_connection = ngx_get_connection(controlfd, cycle->log);
+    control_connection->read->handler = ngx_http_smockron_control_read;
+    control_connection->read->log = cycle->log;
+    control_connection->data = master[i].control_socket;
+    ngx_add_event(control_connection->read, NGX_READ_EVENT, 0);
   }
-  zmq_setsockopt(control_socket, ZMQ_SUBSCRIBE, "", 0);
-  fdsize = sizeof(int);
-  zmq_getsockopt(control_socket, ZMQ_FD, &controlfd, &fdsize);
-  ngx_connection_t *control_connection = ngx_get_connection(controlfd, cycle->log);
-  control_connection->read->handler = ngx_http_smockron_control_read;
-  control_connection->read->log = cycle->log;
-  control_connection->data = control_socket;
-  ngx_add_event(control_connection->read, NGX_READ_EVENT, 0);
 
   ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "initproc");
   return NGX_OK;
