@@ -14,7 +14,7 @@ typedef struct {
 
 static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
-static char *ngx_http_smockron_identifier(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static char *ngx_http_smockron_set_cv(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle);
 static void ngx_http_smockron_delay(ngx_http_request_t *r);
@@ -53,7 +53,7 @@ static ngx_command_t ngx_http_smockron_commands[] = {
   {
     ngx_string("smockron_identifier"),
     NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-    ngx_http_smockron_identifier,
+    ngx_http_smockron_set_cv,
     NGX_HTTP_LOC_CONF_OFFSET,
     offsetof(ngx_http_smockron_conf_t, identifier),
     NULL
@@ -130,15 +130,15 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
   return NGX_CONF_OK;
 }
 
-static char *ngx_http_smockron_identifier(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
-  ngx_http_smockron_conf_t *smcf = conf;
+static char *ngx_http_smockron_set_cv(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+  ngx_http_complex_value_t *field = (ngx_http_complex_value_t *)((char *)conf + cmd->offset);
 
   ngx_str_t *value;
   ngx_http_compile_complex_value_t ccv;
 
   value = cf->args->elts;
 
-  if (smcf->identifier.value.data) {
+  if (field->value.data) {
     return "is duplicate";
   }
 
@@ -146,7 +146,7 @@ static char *ngx_http_smockron_identifier(ngx_conf_t *cf, ngx_command_t *cmd, vo
 
   ccv.cf = cf;
   ccv.value = &value[1];
-  ccv.complex_value = &smcf->identifier;
+  ccv.complex_value = field;
 
   if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
     return NGX_CONF_ERROR;
