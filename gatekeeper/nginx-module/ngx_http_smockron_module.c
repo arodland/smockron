@@ -17,6 +17,7 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
 static char *ngx_http_smockron_identifier(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle);
+static void ngx_http_smockron_delay(ngx_http_request_t *r);
 void ngx_http_smockron_control_read(ngx_event_t *ev);
 
 static void *zmq_context;
@@ -187,6 +188,7 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   int receive_time_len, delay_time_len = 0;
   uint64_t request_time = get_request_time(r);
   uint64_t next_allowed_time = get_ident_next_allowed_request(ident);
+
   ngx_str_t _ACCEPTED = ngx_string("ACCEPTED"),
             _DELAYED  = ngx_string("DELAYED"),
             _REJECTED = ngx_string("REJECTED");
@@ -201,10 +203,17 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   } else if (request_time >= next_allowed_time - 5000) {
     status = &_DELAYED;
     delay_time_len = snprintf(delay_time, 32, "%" PRId64, next_allowed_time);
-    rc = NGX_DECLINED;
+    if (ngx_handle_read_event(r->connection->read, 0) != NGX_OK) {
+      rc = NGX_HTTP_INTERNAL_SERVER_ERROR;
+    } else {
+      rc = NGX_AGAIN;
+      r->read_event_handler = ngx_http_test_reading;
+      r->write_event_handler = ngx_http_smockron_delay;
+      ngx_add_timer(r->connection->write, next_allowed_time - request_time);
+    }
   } else {
     status = &_REJECTED;
-    rc = NGX_DECLINED;
+    rc = NGX_HTTP_SERVICE_UNAVAILABLE;
   }
   
   zmq_send(accounting_socket, smockron_config->domain.data, smockron_config->domain.len + 1, ZMQ_SNDMORE);
@@ -215,6 +224,30 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   zmq_send(accounting_socket, "", 0, 0);
 
   return rc;
+}
+
+/* Lifted from ngx_http_limit_req module */
+static void ngx_http_smockron_delay(ngx_http_request_t *r) {
+  ngx_event_t *wev = r->connection->write;
+
+  if (!wev->timedout) {
+    if (ngx_handle_write_event(wev, 0) != NGX_OK) {
+      ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+    }
+    return;
+  }
+
+  wev->timedout = 0;
+
+  if (ngx_handle_read_event(r->connection->read, 0) != NGX_OK) {
+    ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+    return;
+  }
+
+  r->read_event_handler = ngx_http_block_reading;
+  r->write_event_handler = ngx_http_core_run_phases;
+
+  ngx_http_core_run_phases(r);
 }
 
 static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf) {
