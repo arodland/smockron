@@ -279,7 +279,7 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
     ngx_str_set(&status, "REJECTED");
     rc = NGX_HTTP_SERVICE_UNAVAILABLE;
   }
-  
+
   zmq_send(accounting_socket->socket, smockron_config->domain.data, smockron_config->domain.len + 1, ZMQ_SNDMORE);
   zmq_send(accounting_socket->socket, status.data, status.len, ZMQ_SNDMORE);
   zmq_send(accounting_socket->socket, ident.data, ident.len, ZMQ_SNDMORE);
@@ -343,7 +343,7 @@ static ngx_int_t ngx_http_smockron_preinit(ngx_conf_t *cf) {
   }
 
   ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "smockron_preinit");
-  
+
   return NGX_OK;
 }
 
@@ -353,16 +353,16 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
   size_t fdsize;
 
   ngx_http_smockron_zmq_socket_t *socket = ngx_http_smockron_socket_array->elts;
-  unsigned int i; 
+  unsigned int i;
 
   for (i = 0 ; i < ngx_http_smockron_socket_array->nelts ; i++) {
     socket[i].socket = zmq_socket(zmq_context, ZMQ_PUB);
     if (zmq_connect(socket[i].socket, (const char *)socket[i].server.data) != 0) {
-      ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect accounting socket %*s: %s", 
+      ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect accounting socket %*s: %s",
           socket[i].server.len, socket[i].server.data, strerror(errno));
       return NGX_ERROR;
     }
-  } 
+  }
 
   control_socket = zmq_socket(zmq_context, ZMQ_SUB);
   if (zmq_connect(control_socket, "tcp://localhost:10005") != 0) {
