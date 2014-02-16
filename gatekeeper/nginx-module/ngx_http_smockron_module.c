@@ -21,6 +21,7 @@ typedef struct {
   void *accounting_socket;
   ngx_str_t control_server;
   void *control_socket;
+  ngx_array_t *domains;
 } ngx_http_smockron_master_t;
 
 static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf);
@@ -146,7 +147,9 @@ static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf) {
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
   ngx_http_smockron_conf_t *prev = parent;
   ngx_http_smockron_conf_t *conf = child;
+  ngx_str_t *domain;
   unsigned int i;
+  int domain_found = 0;
 
   ngx_conf_merge_value(conf->enabled, prev->enabled, 0);
   ngx_conf_merge_str_value(conf->master, prev->master, "tcp://localhost:10004");
@@ -155,6 +158,8 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
   for (i = 0 ; i < ngx_http_smockron_master_array->nelts ; i++) {
     if (ngx_strcmp(master[i].accounting_server.data, conf->master.data) == 0) {
       conf->master_idx = i;
+      master = &master[i];
+      break;
     }
   }
   if (conf->master_idx == NGX_CONF_UNSET) {
@@ -163,10 +168,31 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
       return NGX_CONF_ERROR;
     }
     master->accounting_server = conf->master;
+    master->domains = ngx_array_create(ngx_http_smockron_master_pool, 1, sizeof(ngx_str_t));
+    if (master->domains == NULL) {
+      return NGX_CONF_ERROR;
+    }
     conf->master_idx = ngx_http_smockron_master_array->nelts - 1;
   }
 
   ngx_conf_merge_str_value(conf->domain, prev->domain, "default");
+
+  domain = master->domains->elts;
+  for (i = 0 ; i < master->domains->nelts ; i++) {
+    if (ngx_strcmp(domain->data, conf->domain.data) == 0) {
+      domain_found = 1;
+      break;
+    }
+  }
+
+  if (!domain_found) {
+    domain = ngx_array_push(master->domains);
+    if (domain == NULL) {
+      return NGX_CONF_ERROR;
+    }
+    *domain = conf->domain;
+  }
+
   if (conf->identifier.value.data == NULL) {
     if (prev->identifier.value.data == NULL) {
       ngx_str_t value = ngx_string("$remote_addr");
@@ -356,7 +382,8 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
   size_t fdsize;
 
   ngx_http_smockron_master_t *master = ngx_http_smockron_master_array->elts;
-  unsigned int i;
+  unsigned int i,j;
+  ngx_str_t *domain;
 
   for (i = 0 ; i < ngx_http_smockron_master_array->nelts ; i++) {
     master[i].accounting_socket = zmq_socket(zmq_context, ZMQ_PUB);
@@ -364,6 +391,11 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
       ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect accounting socket %*s: %s",
           master[i].accounting_server.len, master[i].accounting_server.data, strerror(errno));
       return NGX_ERROR;
+    }
+
+    domain = master[i].domains->elts;
+    for (j = 0 ; j < master[i].domains->nelts ; j++) {
+      ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Master %d domain %d: %*s", i, j, domain[j].len, domain[j].data);
     }
   }
 
