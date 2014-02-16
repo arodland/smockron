@@ -256,19 +256,16 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   ngx_http_smockron_zmq_socket_t *accounting_socket = ngx_http_smockron_socket_array->elts;
   accounting_socket += smockron_config->server_idx;
 
-  ngx_str_t _ACCEPTED = ngx_string("ACCEPTED"),
-            _DELAYED  = ngx_string("DELAYED"),
-            _REJECTED = ngx_string("REJECTED");
-  ngx_str_t *status;
+  ngx_str_t status;
   ngx_int_t rc;
 
   receive_time_len = snprintf(receive_time, 32, "%" PRId64, request_time);
 
   if (request_time >= next_allowed_time) {
-    status = &_ACCEPTED;
+    ngx_str_set(&status, "ACCEPTED");
     rc = NGX_DECLINED;
   } else if (request_time >= next_allowed_time - smockron_config->max_delay) {
-    status = &_DELAYED;
+    ngx_str_set(&status, "DELAYED");
     delay_time_len = snprintf(delay_time, 32, "%" PRId64, next_allowed_time);
     if (ngx_handle_read_event(r->connection->read, 0) != NGX_OK) {
       rc = smockron_config->status_code;
@@ -279,12 +276,12 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
       ngx_add_timer(r->connection->write, next_allowed_time - request_time);
     }
   } else {
-    status = &_REJECTED;
+    ngx_str_set(&status, "REJECTED");
     rc = NGX_HTTP_SERVICE_UNAVAILABLE;
   }
   
   zmq_send(accounting_socket->socket, smockron_config->domain.data, smockron_config->domain.len + 1, ZMQ_SNDMORE);
-  zmq_send(accounting_socket->socket, status->data, status->len, ZMQ_SNDMORE);
+  zmq_send(accounting_socket->socket, status.data, status.len, ZMQ_SNDMORE);
   zmq_send(accounting_socket->socket, ident.data, ident.len, ZMQ_SNDMORE);
   zmq_send(accounting_socket->socket, receive_time, receive_time_len, ZMQ_SNDMORE);
   zmq_send(accounting_socket->socket, delay_time, delay_time_len, ZMQ_SNDMORE);
