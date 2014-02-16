@@ -10,6 +10,9 @@ typedef struct {
   ngx_str_t server;
   ngx_str_t domain;
   ngx_http_complex_value_t identifier;
+  ngx_http_complex_value_t log_info;
+  ngx_msec_t max_delay;
+  ngx_int_t status_code;
 } ngx_http_smockron_conf_t;
 
 static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf);
@@ -58,6 +61,30 @@ static ngx_command_t ngx_http_smockron_commands[] = {
     offsetof(ngx_http_smockron_conf_t, identifier),
     NULL
   },
+  {
+    ngx_string("smockron_log_info"),
+    NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+    ngx_http_smockron_set_cv,
+    NGX_HTTP_LOC_CONF_OFFSET,
+    offsetof(ngx_http_smockron_conf_t, log_info),
+    NULL
+  },
+  {
+    ngx_string("smockron_max_delay"),
+    NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+    ngx_conf_set_msec_slot,
+    NGX_HTTP_LOC_CONF_OFFSET,
+    offsetof(ngx_http_smockron_conf_t, max_delay),
+    NULL
+  },
+  {
+    ngx_string("smockron_status_code"),
+    NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+    ngx_conf_set_num_slot,
+    NGX_HTTP_LOC_CONF_OFFSET,
+    offsetof(ngx_http_smockron_conf_t, status_code),
+    NULL
+  },
   ngx_null_command
 };
 
@@ -97,6 +124,8 @@ static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf) {
     return NGX_CONF_ERROR;
   }
   conf->enabled = NGX_CONF_UNSET;
+  conf->max_delay = NGX_CONF_UNSET_MSEC;
+  conf->status_code = NGX_CONF_UNSET;
 
   ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "create_loc_conf");
 
@@ -124,6 +153,11 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
       conf->identifier = prev->identifier;
     }
   }
+  if (conf->log_info.value.data == NULL) {
+    conf->log_info = prev->log_info; /* default NULL */
+  }
+  ngx_conf_merge_msec_value(conf->max_delay, prev->max_delay, 5000);
+  ngx_conf_merge_value(conf->status_code, prev->status_code, 503);
 
   ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "merge_loc_conf");
 
@@ -166,6 +200,7 @@ static inline uint64_t get_ident_next_allowed_request(ngx_str_t ident) {
 static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   ngx_http_smockron_conf_t *smockron_config;
   ngx_str_t ident;
+  ngx_str_t log_info;
 
   if (r->internal || ngx_http_get_module_ctx(r->main, ngx_http_smockron_module) != NULL)
     return NGX_DECLINED;
@@ -178,6 +213,10 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   ngx_http_set_ctx(r->main, (void *)1, ngx_http_smockron_module);
 
   if (ngx_http_complex_value(r, &smockron_config->identifier, &ident) != NGX_OK) {
+    return NGX_ERROR;
+  }
+
+  if (ngx_http_complex_value(r, &smockron_config->log_info, &log_info) != NGX_OK) {
     return NGX_ERROR;
   }
 
@@ -200,11 +239,11 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   if (request_time >= next_allowed_time) {
     status = &_ACCEPTED;
     rc = NGX_DECLINED;
-  } else if (request_time >= next_allowed_time - 5000) {
+  } else if (request_time >= next_allowed_time - smockron_config->max_delay) {
     status = &_DELAYED;
     delay_time_len = snprintf(delay_time, 32, "%" PRId64, next_allowed_time);
     if (ngx_handle_read_event(r->connection->read, 0) != NGX_OK) {
-      rc = NGX_HTTP_INTERNAL_SERVER_ERROR;
+      rc = smockron_config->status_code;
     } else {
       rc = NGX_AGAIN;
       r->read_event_handler = ngx_http_test_reading;
@@ -221,7 +260,7 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   zmq_send(accounting_socket, ident.data, ident.len, ZMQ_SNDMORE);
   zmq_send(accounting_socket, receive_time, receive_time_len, ZMQ_SNDMORE);
   zmq_send(accounting_socket, delay_time, delay_time_len, ZMQ_SNDMORE);
-  zmq_send(accounting_socket, "", 0, 0);
+  zmq_send(accounting_socket, log_info.data, log_info.len, 0);
 
   return rc;
 }
