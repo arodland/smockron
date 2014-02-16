@@ -34,8 +34,6 @@ static void ngx_http_smockron_delay(ngx_http_request_t *r);
 void ngx_http_smockron_control_read(ngx_event_t *ev);
 
 static void *zmq_context;
-static void *control_socket;
-static ngx_connection_t *control_connection;
 static ngx_pool_t *ngx_http_smockron_master_pool;
 static ngx_array_t *ngx_http_smockron_master_array;
 
@@ -431,7 +429,7 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
     }
   }
 
-  control_socket = zmq_socket(zmq_context, ZMQ_SUB);
+  void *control_socket = zmq_socket(zmq_context, ZMQ_SUB);
   if (zmq_connect(control_socket, "tcp://localhost:10005") != 0) {
     ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect control socket");
     return NGX_ERROR;
@@ -439,9 +437,10 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
   zmq_setsockopt(control_socket, ZMQ_SUBSCRIBE, "", 0);
   fdsize = sizeof(int);
   zmq_getsockopt(control_socket, ZMQ_FD, &controlfd, &fdsize);
-  control_connection = ngx_get_connection(controlfd, cycle->log);
+  ngx_connection_t *control_connection = ngx_get_connection(controlfd, cycle->log);
   control_connection->read->handler = ngx_http_smockron_control_read;
   control_connection->read->log = cycle->log;
+  control_connection->data = control_socket;
   ngx_add_event(control_connection->read, NGX_READ_EVENT, 0);
 
   ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "initproc");
@@ -451,6 +450,7 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
 void ngx_http_smockron_control_read(ngx_event_t *ev) {
   int events;
   size_t events_size = sizeof(events);
+  void *control_socket = ((ngx_connection_t *)ev->data)->data;
 
   zmq_getsockopt(control_socket, ZMQ_EVENTS, &events, &events_size);
 
