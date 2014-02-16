@@ -3,6 +3,7 @@
 #include <ngx_http.h>
 #include <zmq.h>
 #include <assert.h>
+#include <inttypes.h>
 
 typedef struct {
   ngx_flag_t enabled;
@@ -153,6 +154,14 @@ static char *ngx_http_smockron_identifier(ngx_conf_t *cf, ngx_command_t *cmd, vo
   return NGX_CONF_OK;
 }
 
+static inline uint64_t get_request_time(ngx_http_request_t *r) {
+  return r->start_sec * 1000 + r->start_msec;
+}
+
+static inline uint64_t get_ident_next_allowed_request(ngx_str_t ident) {
+  return 0;
+}
+
 static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   ngx_http_smockron_conf_t *smockron_config;
   ngx_str_t ident;
@@ -171,18 +180,41 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
     return NGX_ERROR;
   }
 
-  char time[32];
-  int timelen = snprintf(time, 32, "%ld", r->start_sec * 1000 + r->start_msec);
   ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
       "Var \"%*s\"=\"%*s\"", smockron_config->identifier.value.len, smockron_config->identifier.value.data, ident.len, ident.data);
+
+  char receive_time[32], delay_time[32];
+  int receive_time_len, delay_time_len = 0;
+  uint64_t request_time = get_request_time(r);
+  uint64_t next_allowed_time = get_ident_next_allowed_request(ident);
+  ngx_str_t _ACCEPTED = ngx_string("ACCEPTED"),
+            _DELAYED  = ngx_string("DELAYED"),
+            _REJECTED = ngx_string("REJECTED");
+  ngx_str_t *status;
+  ngx_int_t rc;
+
+  receive_time_len = snprintf(receive_time, 32, "%" PRId64, request_time);
+
+  if (request_time >= next_allowed_time) {
+    status = &_ACCEPTED;
+    rc = NGX_DECLINED;
+  } else if (request_time >= next_allowed_time - 5000) {
+    status = &_DELAYED;
+    delay_time_len = snprintf(delay_time, 32, "%" PRId64, next_allowed_time);
+    rc = NGX_DECLINED;
+  } else {
+    status = &_REJECTED;
+    rc = NGX_DECLINED;
+  }
+  
   zmq_send(accounting_socket, smockron_config->domain.data, smockron_config->domain.len + 1, ZMQ_SNDMORE);
-  zmq_send(accounting_socket, "ACCEPTED", 8, ZMQ_SNDMORE);
+  zmq_send(accounting_socket, status->data, status->len, ZMQ_SNDMORE);
   zmq_send(accounting_socket, ident.data, ident.len, ZMQ_SNDMORE);
-  zmq_send(accounting_socket, time, timelen, ZMQ_SNDMORE);
-  zmq_send(accounting_socket, "", 0, ZMQ_SNDMORE);
+  zmq_send(accounting_socket, receive_time, receive_time_len, ZMQ_SNDMORE);
+  zmq_send(accounting_socket, delay_time, delay_time_len, ZMQ_SNDMORE);
   zmq_send(accounting_socket, "", 0, 0);
 
-  return NGX_DECLINED;
+  return rc;
 }
 
 static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf) {
