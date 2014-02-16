@@ -144,6 +144,32 @@ static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf) {
   return conf;
 }
 
+static ngx_int_t ngx_http_smockron_master_set_control_server(ngx_http_smockron_master_t *master) {
+  char *port;
+  int portnum;
+
+  master->control_server.data = ngx_pcalloc(ngx_http_smockron_master_pool, master->accounting_server.len + 2);
+  if (master->control_server.data == NULL) {
+    return NGX_ERROR;
+  }
+
+  ngx_memcpy(master->control_server.data, master->accounting_server.data, master->accounting_server.len);
+
+  port = strrchr((const char *)master->control_server.data, ':');
+  if (port == NULL) {
+    return NGX_ERROR;
+  }
+  port ++;
+  master->control_server.len = port - (char *)master->control_server.data;
+
+  portnum = atoi(port);
+  portnum ++;
+
+  master->control_server.len += sprintf(port, "%d", portnum);
+
+  return NGX_OK;
+}
+
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
   ngx_http_smockron_conf_t *prev = parent;
   ngx_http_smockron_conf_t *conf = child;
@@ -170,6 +196,9 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
     master->accounting_server = conf->master;
     master->domains = ngx_array_create(ngx_http_smockron_master_pool, 1, sizeof(ngx_str_t));
     if (master->domains == NULL) {
+      return NGX_CONF_ERROR;
+    }
+    if (ngx_http_smockron_master_set_control_server(master) != NGX_OK) {
       return NGX_CONF_ERROR;
     }
     conf->master_idx = ngx_http_smockron_master_array->nelts - 1;
@@ -392,6 +421,9 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
           master[i].accounting_server.len, master[i].accounting_server.data, strerror(errno));
       return NGX_ERROR;
     }
+
+    ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Control socket: %*s",
+        master[i].control_server.len, master[i].control_server.data);
 
     domain = master[i].domains->elts;
     for (j = 0 ; j < master[i].domains->nelts ; j++) {
