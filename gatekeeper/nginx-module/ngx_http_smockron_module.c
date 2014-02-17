@@ -4,6 +4,9 @@
 #include <zmq.h>
 #include <assert.h>
 #include <inttypes.h>
+#include "uthash/src/uthash.h"
+
+#define DELAY_KEY_LEN 256
 
 typedef struct {
   ngx_flag_t enabled;
@@ -24,6 +27,12 @@ typedef struct {
   ngx_array_t *domains;
 } ngx_http_smockron_master_t;
 
+typedef struct {
+  char key[DELAY_KEY_LEN];
+  uint64_t next_allowed;
+  UT_hash_handle hh;
+} ngx_http_smockron_delay_t;
+
 static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 static char *ngx_http_smockron_set_cv(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
@@ -32,10 +41,22 @@ static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle);
 static void ngx_http_smockron_delay(ngx_http_request_t *r);
 static void ngx_http_smockron_control_read(ngx_event_t *ev);
+static void ngx_http_smockron_hash_cleanup_handler(ngx_event_t *ev);
 
 static void *zmq_context;
+
 static ngx_pool_t *ngx_http_smockron_master_pool;
 static ngx_array_t *ngx_http_smockron_master_array;
+
+static ngx_pool_t *ngx_http_smockron_delay_pool;
+static ngx_http_smockron_delay_t *ngx_http_smockron_delay_hash = NULL;
+
+static ngx_event_t hash_cleanup_event;
+
+#undef uthash_malloc
+#undef uthash_free
+#define uthash_malloc(sz) ngx_palloc(ngx_http_smockron_delay_pool,sz)
+#define uthash_free(ptr,sz) ngx_pfree(ngx_http_smockron_delay_pool,ptr)
 
 static ngx_command_t ngx_http_smockron_commands[] = {
   {
@@ -274,8 +295,27 @@ static inline uint64_t get_request_time(ngx_http_request_t *r) {
   return r->start_sec * 1000 + r->start_msec;
 }
 
-static inline uint64_t get_ident_next_allowed_request(ngx_str_t ident) {
-  return 0;
+static inline uint64_t get_ident_next_allowed_request(ngx_str_t domain, ngx_str_t ident, ngx_log_t *log) {
+  char key[DELAY_KEY_LEN];
+
+  if (domain.len + ident.len + 1 > DELAY_KEY_LEN) {
+    ngx_log_error(NGX_LOG_ERR, log, 0, "domain len %d + ident len %d > key size %d",
+        domain.len + 1, ident.len, DELAY_KEY_LEN);
+    return 0;
+  }
+      
+  strncpy(key, (char *)domain.data, domain.len);
+  key[domain.len] = ';';
+  strncpy(key + domain.len + 1, (char *)ident.data, ident.len);
+  key[domain.len + ident.len + 1] = '\0';
+
+  ngx_http_smockron_delay_t *delay = NULL;
+  HASH_FIND_STR(ngx_http_smockron_delay_hash, key, delay);
+  if (delay) {
+    return delay->next_allowed;
+  } else {
+    return 0;
+  }
 }
 
 static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
@@ -307,8 +347,7 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   char receive_time[32], delay_time[32];
   int receive_time_len, delay_time_len = 0;
   uint64_t request_time = get_request_time(r);
-//  uint64_t next_allowed_time = get_ident_next_allowed_request(ident);
-  uint64_t next_allowed_time = request_time + 1000;
+  uint64_t next_allowed_time = get_ident_next_allowed_request(smockron_config->domain, ident, r->connection->log);
   ngx_http_smockron_master_t *master = ngx_http_smockron_master_array->elts;
   master += smockron_config->master_idx;
 
@@ -388,7 +427,7 @@ static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf) {
 }
 
 static ngx_int_t ngx_http_smockron_preinit(ngx_conf_t *cf) {
-  ngx_http_smockron_master_pool = ngx_create_pool(100*sizeof(ngx_http_smockron_master_t), cf->log);
+  ngx_http_smockron_master_pool = ngx_create_pool(NGX_DEFAULT_POOL_SIZE, cf->log);
   if (ngx_http_smockron_master_pool == NULL) {
     return NGX_ERROR;
   }
@@ -440,6 +479,15 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
     ngx_add_event(control_connection->read, NGX_READ_EVENT, 0);
   }
 
+  ngx_http_smockron_delay_pool = ngx_create_pool(NGX_DEFAULT_POOL_SIZE, cycle->log);
+  if (ngx_http_smockron_delay_pool == NULL) {
+    return NGX_ERROR;
+  }
+
+  hash_cleanup_event.handler = ngx_http_smockron_hash_cleanup_handler;
+  hash_cleanup_event.log = cycle->log;
+  ngx_add_timer(&hash_cleanup_event, 1000);
+
   ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "initproc");
   return NGX_OK;
 }
@@ -454,17 +502,86 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
   while (events & ZMQ_POLLIN) {
     int more;
     size_t more_size = sizeof(more);
-    char buf[256];
+    char msg[4][256];
+    int i = 0;
 
     do {
-      bzero(buf, sizeof(buf));
-      int rc = zmq_recv(control_socket, buf, sizeof(buf), 0);
-      assert(rc != -1);
+      if (i > 4) {
+        ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Control message has unexpected parts, ignoring");
+        break;
+      }
+
+      bzero(msg[i], sizeof(msg[i]));
+      int rc = zmq_recv(control_socket, msg[i], sizeof(msg[i]), 0);
+      if (rc == -1) {
+        ngx_log_error(NGX_LOG_ERR, ev->log, 0, "%s receiving control message, dropping", strerror(errno));
+        goto out;
+      }
+      if ((unsigned)rc > sizeof(msg[i])) {
+        ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Control part length %d > %d, dropping", rc, sizeof(msg[i]));
+        goto out;
+      }
+
       rc = zmq_getsockopt(control_socket, ZMQ_RCVMORE, &more, &more_size);
       assert(rc == 0);
-      fprintf(stderr, "msg: %*s, more: %d\n", rc, buf, more);
+
+      i++;
     } while (more);
+
+    if (ngx_strcmp(msg[1], "DELAY_UNTIL") == 0) {
+      size_t domain_len = strlen(msg[0]) + 1 /* separator */,
+             ident_len = strlen(msg[2]);
+      char key[DELAY_KEY_LEN];
+      uint64_t ts = atol(msg[3]);
+
+      ngx_http_smockron_delay_t *delay;
+
+      if (domain_len + ident_len > DELAY_KEY_LEN) {
+        ngx_log_error(NGX_LOG_ERR, ev->log, 0, "domain len %d + ident len %d > key size %d",
+            domain_len, ident_len, DELAY_KEY_LEN);
+        goto out;
+      }
+      
+      strcpy(key, msg[0]);
+      key[domain_len - 1] = ';';
+      strcpy(key + domain_len, msg[2]);
+
+      HASH_FIND_STR(ngx_http_smockron_delay_hash, key, delay);
+      if (!delay) { /* Newly added */
+        delay = ngx_pcalloc(ngx_http_smockron_delay_pool, sizeof(ngx_http_smockron_delay_t));
+        if (delay == NULL) {
+          ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Allocating delay failed!");
+          goto out;
+        }
+        strcpy(delay->key, key);
+        delay->next_allowed = ts;
+        HASH_ADD_STR(ngx_http_smockron_delay_hash, key, delay);
+      } else if (delay->next_allowed < ts) {
+        delay->next_allowed = ts;
+      }
+    }
+
+    out:
     events = 0;
     zmq_getsockopt(control_socket, ZMQ_EVENTS, &events, &events_size);
   }
+}
+
+static void ngx_http_smockron_hash_cleanup_handler(ngx_event_t *ev) {
+  ngx_http_smockron_delay_t *delay = NULL, *tmp = NULL;
+  int freed = 0;
+
+  HASH_ITER(hh, ngx_http_smockron_delay_hash, delay, tmp) {
+    if (delay->next_allowed < ngx_current_msec) {
+      HASH_DEL(ngx_http_smockron_delay_hash, delay);
+      ngx_pfree(ngx_http_smockron_delay_pool, delay);
+      freed ++;
+    }
+  }
+
+  if (freed) {
+    ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Freed %d", freed);
+  }
+
+  ngx_add_timer(&hash_cleanup_event, 1000);
 }
