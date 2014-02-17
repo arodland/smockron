@@ -31,7 +31,7 @@ static ngx_int_t ngx_http_smockron_preinit(ngx_conf_t *cf);
 static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle);
 static void ngx_http_smockron_delay(ngx_http_request_t *r);
-void ngx_http_smockron_control_read(ngx_event_t *ev);
+static void ngx_http_smockron_control_read(ngx_event_t *ev);
 
 static void *zmq_context;
 static ngx_pool_t *ngx_http_smockron_master_pool;
@@ -444,7 +444,7 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
   return NGX_OK;
 }
 
-void ngx_http_smockron_control_read(ngx_event_t *ev) {
+static void ngx_http_smockron_control_read(ngx_event_t *ev) {
   int events;
   size_t events_size = sizeof(events);
   void *control_socket = ((ngx_connection_t *)ev->data)->data;
