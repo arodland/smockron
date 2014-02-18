@@ -39,6 +39,7 @@ static char *ngx_http_smockron_set_cv(ngx_conf_t *cf, ngx_command_t *cmd, void *
 static ngx_int_t ngx_http_smockron_preinit(ngx_conf_t *cf);
 static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle);
+static ngx_int_t ngx_http_smockron_shm_init(ngx_shm_zone_t *zone, void *data);
 static void ngx_http_smockron_delay(ngx_http_request_t *r);
 static void ngx_http_smockron_control_read(ngx_event_t *ev);
 static void ngx_http_smockron_hash_cleanup_handler(ngx_event_t *ev);
@@ -48,15 +49,17 @@ static void *zmq_context;
 static ngx_pool_t *ngx_http_smockron_master_pool;
 static ngx_array_t *ngx_http_smockron_master_array;
 
-static ngx_pool_t *ngx_http_smockron_delay_pool;
+static ngx_shm_zone_t *ngx_http_smockron_delay_zone;
 static ngx_http_smockron_delay_t *ngx_http_smockron_delay_hash = NULL;
 
 static ngx_event_t hash_cleanup_event;
 
+#define ngx_http_smockron_delay_pool ((ngx_slab_pool_t *)ngx_http_smockron_delay_zone->shm.addr)
+
 #undef uthash_malloc
 #undef uthash_free
-#define uthash_malloc(sz) ngx_palloc(ngx_http_smockron_delay_pool,sz)
-#define uthash_free(ptr,sz) ngx_pfree(ngx_http_smockron_delay_pool,ptr)
+#define uthash_malloc(sz) ngx_slab_alloc_locked(ngx_http_smockron_delay_pool, sz)
+#define uthash_free(ptr,sz) ngx_slab_free_locked(ngx_http_smockron_delay_pool, ptr)
 
 static ngx_command_t ngx_http_smockron_commands[] = {
   {
@@ -297,6 +300,7 @@ static inline uint64_t get_request_time(ngx_http_request_t *r) {
 
 static inline uint64_t get_ident_next_allowed_request(ngx_str_t domain, ngx_str_t ident, ngx_log_t *log) {
   char key[DELAY_KEY_LEN];
+  uint64_t ret;
 
   if (domain.len + ident.len + 1 > DELAY_KEY_LEN) {
     ngx_log_error(NGX_LOG_ERR, log, 0, "domain len %d + ident len %d > key size %d",
@@ -310,12 +314,11 @@ static inline uint64_t get_ident_next_allowed_request(ngx_str_t domain, ngx_str_
   key[domain.len + ident.len + 1] = '\0';
 
   ngx_http_smockron_delay_t *delay = NULL;
+  ngx_shmtx_lock(&ngx_http_smockron_delay_pool->mutex);
   HASH_FIND_STR(ngx_http_smockron_delay_hash, key, delay);
-  if (delay) {
-    return delay->next_allowed;
-  } else {
-    return 0;
-  }
+  ret = delay ? delay->next_allowed : 0;
+  ngx_shmtx_unlock(&ngx_http_smockron_delay_pool->mutex);
+  return ret;
 }
 
 static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
@@ -353,6 +356,9 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
 
   ngx_str_t status;
   ngx_int_t rc;
+
+  ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
+      "Receive %l, allowed %l", request_time, next_allowed_time);
 
   receive_time_len = snprintf(receive_time, 32, "%" PRId64, request_time);
 
@@ -412,6 +418,7 @@ static void ngx_http_smockron_delay(ngx_http_request_t *r) {
 static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf) {
   ngx_http_handler_pt *h;
   ngx_http_core_main_conf_t *cmcf;
+  ngx_str_t shm_key = ngx_string("smockron_delay");
 
   cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
   h = ngx_array_push(&cmcf->phases[NGX_HTTP_PREACCESS_PHASE].handlers);
@@ -421,7 +428,24 @@ static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf) {
 
   *h = ngx_http_smockron_handler;
 
+  ngx_http_smockron_delay_zone = ngx_shared_memory_add(cf, &shm_key, 4*1024*1024, &ngx_http_smockron_module);
+  ngx_http_smockron_delay_zone->init = ngx_http_smockron_shm_init;
+
   ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "smockron_init");
+
+  return NGX_OK;
+}
+
+static ngx_int_t ngx_http_smockron_shm_init(ngx_shm_zone_t *zone, void *data) {
+
+  ngx_log_error(NGX_LOG_EMERG, zone->shm.log, 0, "shminit");
+
+  if (data) {
+    zone->data = data;
+    return NGX_OK;
+  }
+
+  zone->data = (void *)1;
 
   return NGX_OK;
 }
@@ -482,11 +506,6 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
   }
 
   if (ngx_process_slot == 0) {
-    ngx_http_smockron_delay_pool = ngx_create_pool(NGX_DEFAULT_POOL_SIZE, cycle->log);
-    if (ngx_http_smockron_delay_pool == NULL) {
-      return NGX_ERROR;
-    }
-
     hash_cleanup_event.handler = ngx_http_smockron_hash_cleanup_handler;
     hash_cleanup_event.log = cycle->log;
     ngx_add_timer(&hash_cleanup_event, 1000);
@@ -550,12 +569,13 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
       key[domain_len - 1] = ';';
       strcpy(key + domain_len, msg[2]);
 
+      ngx_shmtx_lock(&ngx_http_smockron_delay_pool->mutex);
       HASH_FIND_STR(ngx_http_smockron_delay_hash, key, delay);
       if (!delay) { /* Newly added */
-        delay = ngx_pcalloc(ngx_http_smockron_delay_pool, sizeof(ngx_http_smockron_delay_t));
+        delay = ngx_slab_alloc_locked(ngx_http_smockron_delay_pool, sizeof(ngx_http_smockron_delay_t));
         if (delay == NULL) {
           ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Allocating delay failed!");
-          goto out;
+          goto out_unlock;
         }
         strcpy(delay->key, key);
         delay->next_allowed = ts;
@@ -565,6 +585,8 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
       }
     }
 
+    out_unlock:
+    ngx_shmtx_unlock(&ngx_http_smockron_delay_pool->mutex);
     out:
     events = 0;
     zmq_getsockopt(control_socket, ZMQ_EVENTS, &events, &events_size);
@@ -575,13 +597,17 @@ static void ngx_http_smockron_hash_cleanup_handler(ngx_event_t *ev) {
   ngx_http_smockron_delay_t *delay = NULL, *tmp = NULL;
   int freed = 0;
 
+  ngx_shmtx_lock(&ngx_http_smockron_delay_pool->mutex);
   HASH_ITER(hh, ngx_http_smockron_delay_hash, delay, tmp) {
     if (delay->next_allowed < ngx_current_msec) {
       HASH_DEL(ngx_http_smockron_delay_hash, delay);
-      ngx_pfree(ngx_http_smockron_delay_pool, delay);
+      ngx_slab_free_locked(ngx_http_smockron_delay_pool, delay);
       freed ++;
+      if (freed >= 100)
+        break;
     }
   }
+  ngx_shmtx_unlock(&ngx_http_smockron_delay_pool->mutex);
 
   if (freed) {
     ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Freed %d", freed);
