@@ -4,6 +4,7 @@
 #include <zmq.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <setjmp.h>
 #include "uthash/src/uthash.h"
 
 #define DELAY_KEY_LEN 256
@@ -58,8 +59,10 @@ static ngx_event_t hash_cleanup_event;
 
 #undef uthash_malloc
 #undef uthash_free
+#undef uthash_fatal
 #define uthash_malloc(sz) ngx_slab_alloc_locked(ngx_http_smockron_delay_pool, sz)
 #define uthash_free(ptr,sz) ngx_slab_free_locked(ngx_http_smockron_delay_pool, ptr)
+#define uthash_fatal(msg) longjmp(bailout, 1);
 
 static ngx_command_t ngx_http_smockron_commands[] = {
   {
@@ -556,6 +559,7 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
              ident_len = strlen(msg[2]);
       char key[DELAY_KEY_LEN];
       uint64_t ts = atol(msg[3]);
+      int delay_hash_was_null;
 
       ngx_http_smockron_delay_t *delay;
 
@@ -570,8 +574,11 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
       strcpy(key + domain_len, msg[2]);
 
       ngx_shmtx_lock(&ngx_http_smockron_delay_pool->mutex);
+      delay_hash_was_null = ngx_http_smockron_delay_hash == NULL;
       HASH_FIND_STR(ngx_http_smockron_delay_hash, key, delay);
       if (!delay) { /* Newly added */
+        jmp_buf bailout;
+
         delay = ngx_slab_alloc_locked(ngx_http_smockron_delay_pool, sizeof(ngx_http_smockron_delay_t));
         if (delay == NULL) {
           ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Allocating delay failed!");
@@ -579,7 +586,17 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
         }
         strcpy(delay->key, key);
         delay->next_allowed = ts;
-        HASH_ADD_STR(ngx_http_smockron_delay_hash, key, delay);
+        if (setjmp(bailout) == 0) {
+          HASH_ADD_STR(ngx_http_smockron_delay_hash, key, delay);
+        } else {
+          ngx_log_error(NGX_LOG_ERR, ev->log, 0, "HASH_ADD_STR failed!");
+          if (delay_hash_was_null && ngx_http_smockron_delay_hash) {
+            /* Otherwise we end up with a bad hash head that causes a segv on next access */
+            ngx_slab_free_locked(ngx_http_smockron_delay_pool, ngx_http_smockron_delay_hash);
+            ngx_http_smockron_delay_hash = NULL;
+          }
+          goto out_unlock;
+        }
       } else if (delay->next_allowed < ts) {
         delay->next_allowed = ts;
       }
