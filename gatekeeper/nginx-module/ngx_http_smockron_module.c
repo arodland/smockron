@@ -51,7 +51,7 @@ static ngx_pool_t *ngx_http_smockron_master_pool;
 static ngx_array_t *ngx_http_smockron_master_array;
 
 static ngx_shm_zone_t *ngx_http_smockron_delay_zone;
-static ngx_http_smockron_delay_t *ngx_http_smockron_delay_hash = NULL;
+static ngx_http_smockron_delay_t **ngx_http_smockron_delay_hash = NULL;
 
 static ngx_event_t hash_cleanup_event;
 
@@ -318,7 +318,7 @@ static inline uint64_t get_ident_next_allowed_request(ngx_str_t domain, ngx_str_
 
   ngx_http_smockron_delay_t *delay = NULL;
   ngx_shmtx_lock(&ngx_http_smockron_delay_pool->mutex);
-  HASH_FIND_STR(ngx_http_smockron_delay_hash, key, delay);
+  HASH_FIND_STR(*ngx_http_smockron_delay_hash, key, delay);
   ret = delay ? delay->next_allowed : 0;
   ngx_shmtx_unlock(&ngx_http_smockron_delay_pool->mutex);
   return ret;
@@ -448,6 +448,12 @@ static ngx_int_t ngx_http_smockron_shm_init(ngx_shm_zone_t *zone, void *data) {
     return NGX_OK;
   }
 
+  ngx_http_smockron_delay_hash = ngx_slab_alloc(ngx_http_smockron_delay_pool, sizeof(ngx_http_smockron_delay_hash));
+  if (ngx_http_smockron_delay_hash == NULL) {
+    return NGX_ERROR;
+  }
+  *ngx_http_smockron_delay_hash = NULL;
+
   zone->data = (void *)1;
 
   return NGX_OK;
@@ -574,8 +580,8 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
       strcpy(key + domain_len, msg[2]);
 
       ngx_shmtx_lock(&ngx_http_smockron_delay_pool->mutex);
-      delay_hash_was_null = ngx_http_smockron_delay_hash == NULL;
-      HASH_FIND_STR(ngx_http_smockron_delay_hash, key, delay);
+      delay_hash_was_null = *ngx_http_smockron_delay_hash == NULL;
+      HASH_FIND_STR(*ngx_http_smockron_delay_hash, key, delay);
       if (!delay) { /* Newly added */
         jmp_buf bailout;
 
@@ -587,13 +593,13 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
         strcpy(delay->key, key);
         delay->next_allowed = ts;
         if (setjmp(bailout) == 0) {
-          HASH_ADD_STR(ngx_http_smockron_delay_hash, key, delay);
+          HASH_ADD_STR(*ngx_http_smockron_delay_hash, key, delay);
         } else {
           ngx_log_error(NGX_LOG_ERR, ev->log, 0, "HASH_ADD_STR failed!");
-          if (delay_hash_was_null && ngx_http_smockron_delay_hash) {
+          if (delay_hash_was_null && *ngx_http_smockron_delay_hash) {
             /* Otherwise we end up with a bad hash head that causes a segv on next access */
-            ngx_slab_free_locked(ngx_http_smockron_delay_pool, ngx_http_smockron_delay_hash);
-            ngx_http_smockron_delay_hash = NULL;
+            ngx_slab_free_locked(ngx_http_smockron_delay_pool, *ngx_http_smockron_delay_hash);
+            *ngx_http_smockron_delay_hash = NULL;
           }
           goto out_unlock;
         }
@@ -615,9 +621,9 @@ static void ngx_http_smockron_hash_cleanup_handler(ngx_event_t *ev) {
   int freed = 0;
 
   ngx_shmtx_lock(&ngx_http_smockron_delay_pool->mutex);
-  HASH_ITER(hh, ngx_http_smockron_delay_hash, delay, tmp) {
+  HASH_ITER(hh, *ngx_http_smockron_delay_hash, delay, tmp) {
     if (delay->next_allowed < ngx_current_msec) {
-      HASH_DEL(ngx_http_smockron_delay_hash, delay);
+      HASH_DEL(*ngx_http_smockron_delay_hash, delay);
       ngx_slab_free_locked(ngx_http_smockron_delay_pool, delay);
       freed ++;
       if (freed >= 100)
