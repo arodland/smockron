@@ -459,36 +459,40 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
       return NGX_ERROR;
     }
 
-    master[i].control_socket = zmq_socket(zmq_context, ZMQ_SUB);
-    if (zmq_connect(master[i].control_socket, (const char *)master[i].control_server.data) != 0) {
-      ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect control socket %*s: %s",
-          master[i].control_server.len, master[i].control_server.data, strerror(errno));
+    if (ngx_process_slot == 0) {
+      master[i].control_socket = zmq_socket(zmq_context, ZMQ_SUB);
+      if (zmq_connect(master[i].control_socket, (const char *)master[i].control_server.data) != 0) {
+        ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect control socket %*s: %s",
+            master[i].control_server.len, master[i].control_server.data, strerror(errno));
+        return NGX_ERROR;
+      }
+
+      domain = master[i].domains->elts;
+      for (j = 0 ; j < master[i].domains->nelts ; j++) {
+        zmq_setsockopt(master[i].control_socket, ZMQ_SUBSCRIBE, domain[j].data, domain[j].len);
+      }
+
+      zmq_getsockopt(master[i].control_socket, ZMQ_FD, &controlfd, &fdsize);
+      ngx_connection_t *control_connection = ngx_get_connection(controlfd, cycle->log);
+      control_connection->read->handler = ngx_http_smockron_control_read;
+      control_connection->read->log = cycle->log;
+      control_connection->data = master[i].control_socket;
+      ngx_add_event(control_connection->read, NGX_READ_EVENT, 0);
+    }
+  }
+
+  if (ngx_process_slot == 0) {
+    ngx_http_smockron_delay_pool = ngx_create_pool(NGX_DEFAULT_POOL_SIZE, cycle->log);
+    if (ngx_http_smockron_delay_pool == NULL) {
       return NGX_ERROR;
     }
 
-    domain = master[i].domains->elts;
-    for (j = 0 ; j < master[i].domains->nelts ; j++) {
-      zmq_setsockopt(master[i].control_socket, ZMQ_SUBSCRIBE, domain[j].data, domain[j].len);
-    }
-
-    zmq_getsockopt(master[i].control_socket, ZMQ_FD, &controlfd, &fdsize);
-    ngx_connection_t *control_connection = ngx_get_connection(controlfd, cycle->log);
-    control_connection->read->handler = ngx_http_smockron_control_read;
-    control_connection->read->log = cycle->log;
-    control_connection->data = master[i].control_socket;
-    ngx_add_event(control_connection->read, NGX_READ_EVENT, 0);
+    hash_cleanup_event.handler = ngx_http_smockron_hash_cleanup_handler;
+    hash_cleanup_event.log = cycle->log;
+    ngx_add_timer(&hash_cleanup_event, 1000);
   }
 
-  ngx_http_smockron_delay_pool = ngx_create_pool(NGX_DEFAULT_POOL_SIZE, cycle->log);
-  if (ngx_http_smockron_delay_pool == NULL) {
-    return NGX_ERROR;
-  }
-
-  hash_cleanup_event.handler = ngx_http_smockron_hash_cleanup_handler;
-  hash_cleanup_event.log = cycle->log;
-  ngx_add_timer(&hash_cleanup_event, 1000);
-
-  ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "initproc");
+  ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "initproc %d", ngx_process_slot);
   return NGX_OK;
 }
 
