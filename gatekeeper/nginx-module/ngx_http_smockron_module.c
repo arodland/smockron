@@ -178,8 +178,6 @@ static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf) {
   conf->status_code = NGX_CONF_UNSET;
   conf->master_idx = NGX_CONF_UNSET;
 
-  ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "create_loc_conf");
-
   return conf;
 }
 
@@ -281,8 +279,6 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
   ngx_conf_merge_msec_value(conf->max_delay, prev->max_delay, 5000);
   ngx_conf_merge_value(conf->status_code, prev->status_code, 503);
 
-  ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "merge_loc_conf");
-
   return NGX_CONF_OK;
 }
 
@@ -381,9 +377,6 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
     return NGX_ERROR;
   }
 
-  ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
-      "Var \"%*s\"=\"%*s\"", smockron_config->identifier.value.len, smockron_config->identifier.value.data, ident.len, ident.data);
-
   char receive_time[32], delay_time[32];
   int receive_time_len, delay_time_len = 0;
   uint64_t request_time = get_request_time(r);
@@ -394,8 +387,10 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   ngx_str_t status;
   ngx_int_t rc;
 
-  ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0,
-      "Receive %l, allowed %l", request_time, next_allowed_time);
+  ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0,
+      "smockron ident \"%*s\"=\"%*s\" rcv TS %l allowed TS %l",
+      smockron_config->identifier.value.len, smockron_config->identifier.value.data, ident.len, ident.data,
+      request_time, next_allowed_time);
 
   receive_time_len = snprintf(receive_time, 32, "%" PRId64, request_time);
 
@@ -472,14 +467,10 @@ static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf) {
 
   ngx_http_smockron_delay_zone->init = ngx_http_smockron_shm_init;
 
-  ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "smockron_init");
-
   return NGX_OK;
 }
 
 static ngx_int_t ngx_http_smockron_shm_init(ngx_shm_zone_t *zone, void *data) {
-
-  ngx_log_error(NGX_LOG_EMERG, zone->shm.log, 0, "shminit");
 
   if (data) {
     zone->data = data;
@@ -508,8 +499,6 @@ static ngx_int_t ngx_http_smockron_preinit(ngx_conf_t *cf) {
     return NGX_ERROR;
   }
 
-  ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "smockron_preinit");
-
   return NGX_OK;
 }
 
@@ -525,7 +514,7 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
   for (i = 0 ; i < ngx_http_smockron_master_array->nelts ; i++) {
     master[i].accounting_socket = zmq_socket(zmq_context, ZMQ_PUB);
     if (zmq_connect(master[i].accounting_socket, (const char *)master[i].accounting_server.data) != 0) {
-      ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect accounting socket %*s: %s",
+      ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to connect accounting socket %*s: %s",
           master[i].accounting_server.len, master[i].accounting_server.data, strerror(errno));
       return NGX_ERROR;
     }
@@ -533,7 +522,7 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
     if (ngx_process_slot == 0) {
       master[i].control_socket = zmq_socket(zmq_context, ZMQ_SUB);
       if (zmq_connect(master[i].control_socket, (const char *)master[i].control_server.data) != 0) {
-        ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to connect control socket %*s: %s",
+        ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to connect control socket %*s: %s",
             master[i].control_server.len, master[i].control_server.data, strerror(errno));
         return NGX_ERROR;
       }
@@ -558,7 +547,6 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
     ngx_add_timer(&hash_cleanup_event, 1000);
   }
 
-  ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "initproc %d", ngx_process_slot);
   return NGX_OK;
 }
 
@@ -671,7 +659,7 @@ static void ngx_http_smockron_hash_cleanup_handler(ngx_event_t *ev) {
   ngx_shmtx_unlock(&ngx_http_smockron_delay_pool->mutex);
 
   if (freed) {
-    ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Freed %d", freed);
+    ngx_log_error(NGX_LOG_DEBUG, ev->log, 0, "Freed %d", freed);
   }
 
   ngx_add_timer(&hash_cleanup_event, 1000);
