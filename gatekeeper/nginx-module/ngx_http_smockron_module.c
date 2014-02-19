@@ -21,6 +21,10 @@ typedef struct {
 } ngx_http_smockron_conf_t;
 
 typedef struct {
+  size_t shm_size;
+} ngx_http_smockron_main_conf_t;
+
+typedef struct {
   ngx_str_t accounting_server;
   void *accounting_socket;
   ngx_str_t control_server;
@@ -37,6 +41,8 @@ typedef struct {
 static void *ngx_http_smockron_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 static char *ngx_http_smockron_set_cv(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static void *ngx_http_smockron_create_main_conf(ngx_conf_t *cf);
+static char *ngx_http_smockron_init_main_conf(ngx_conf_t *cf, void *conf);
 static ngx_int_t ngx_http_smockron_preinit(ngx_conf_t *cf);
 static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle);
@@ -121,6 +127,14 @@ static ngx_command_t ngx_http_smockron_commands[] = {
     offsetof(ngx_http_smockron_conf_t, status_code),
     NULL
   },
+  {
+    ngx_string("smockron_shm_size"),
+    NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
+    ngx_conf_set_size_slot,
+    NGX_HTTP_MAIN_CONF_OFFSET,
+    offsetof(ngx_http_smockron_main_conf_t, shm_size),
+    NULL
+  },
   ngx_null_command
 };
 
@@ -128,8 +142,8 @@ static ngx_http_module_t ngx_http_smockron_module_ctx = {
   ngx_http_smockron_preinit,     /* preconfiguration */
   ngx_http_smockron_init,        /* postconfiguration */
 
-  NULL,                          /* create main configuration */
-  NULL,                          /* init main configuration */
+  ngx_http_smockron_create_main_conf, /* create main configuration */
+  ngx_http_smockron_init_main_conf,   /* init main configuration */
 
   NULL,                          /* create server configuration */
   NULL,                          /* merge server configuration */
@@ -297,6 +311,26 @@ static char *ngx_http_smockron_set_cv(ngx_conf_t *cf, ngx_command_t *cmd, void *
   return NGX_CONF_OK;
 }
 
+static void *ngx_http_smockron_create_main_conf(ngx_conf_t *cf) {
+  ngx_http_smockron_main_conf_t *conf;
+  conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_smockron_main_conf_t));
+  if (conf == NULL) {
+    return NGX_CONF_ERROR;
+  }
+
+  conf->shm_size = NGX_CONF_UNSET_SIZE;
+  return conf;
+}
+
+static char *ngx_http_smockron_init_main_conf(ngx_conf_t *cf, void *conf) {
+  ngx_http_smockron_main_conf_t *smcf = conf;
+
+  if (smcf->shm_size == NGX_CONF_UNSET_SIZE) {
+    smcf->shm_size = 4 * 1024 * 1024;
+  }
+  return NGX_CONF_OK;
+}
+
 static inline uint64_t get_request_time(ngx_http_request_t *r) {
   return r->start_sec * 1000 + r->start_msec;
 }
@@ -421,6 +455,7 @@ static void ngx_http_smockron_delay(ngx_http_request_t *r) {
 static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf) {
   ngx_http_handler_pt *h;
   ngx_http_core_main_conf_t *cmcf;
+  ngx_http_smockron_main_conf_t *smcf;
   ngx_str_t shm_key = ngx_string("smockron_delay");
 
   cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
@@ -431,7 +466,10 @@ static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf) {
 
   *h = ngx_http_smockron_handler;
 
-  ngx_http_smockron_delay_zone = ngx_shared_memory_add(cf, &shm_key, 4*1024*1024, &ngx_http_smockron_module);
+  smcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_smockron_module);
+
+  ngx_http_smockron_delay_zone = ngx_shared_memory_add(cf, &shm_key, smcf->shm_size, &ngx_http_smockron_module);
+
   ngx_http_smockron_delay_zone->init = ngx_http_smockron_shm_init;
 
   ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "smockron_init");
@@ -587,7 +625,7 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
 
         delay = ngx_slab_alloc_locked(ngx_http_smockron_delay_pool, sizeof(ngx_http_smockron_delay_t));
         if (delay == NULL) {
-          ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Allocating delay failed!");
+          ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Allocating delay failed, increase smockron_shm_size");
           goto out_unlock;
         }
         strcpy(delay->key, key);
@@ -595,7 +633,7 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
         if (setjmp(bailout) == 0) {
           HASH_ADD_STR(*ngx_http_smockron_delay_hash, key, delay);
         } else {
-          ngx_log_error(NGX_LOG_ERR, ev->log, 0, "HASH_ADD_STR failed!");
+          ngx_log_error(NGX_LOG_ERR, ev->log, 0, "HASH_ADD_STR failed, increase smockron_shm_size");
           if (delay_hash_was_null && *ngx_http_smockron_delay_hash) {
             /* Otherwise we end up with a bad hash head that causes a segv on next access */
             ngx_slab_free_locked(ngx_http_smockron_delay_pool, *ngx_http_smockron_delay_hash);
