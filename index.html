@@ -112,10 +112,9 @@
       <div class="cell">
         <h2>Is it ready to use?</h2>
         <p>
-        Smockron is alpha software under active development. It's not ready for production use quite yet.
-        The master and the Node/Express gatekeeper have a basic set of features and are reasonably stable. The nginx
-        gatekeeper is under heavy development. Adventurous people are encouraged to try it out and share their
-        experiences.
+        Smockron is beta software under active development. It's not ready for production use quite yet.
+        All of the components have a basic set of features and are reasonably stable, and you're encouraged to try it
+        out and share your experiences.
         </p>
       </div>
     </div>
@@ -129,7 +128,8 @@
             <div class="cell">
               <h3>Getting the code</h3>
               <p>Check it out from <a href="https://github.com/arodland/smockron">GitHub</a>:</p>
-              <pre>git clone https://github.com/arodland/smockron</pre>
+              <pre>git clone https://github.com/arodland/smockron
+git submodule update --init</pre>
             </div>
           </div>
         </div>
@@ -188,9 +188,9 @@ cd smockron/gatekeeper/nginx-module
               <h4>Configure</h4>
               <p>In nginx.conf:</p>
               <pre>
-smockron on
-smockron_server smockron.example.com
-smockron_domain myapp</pre>
+smockron on;
+smockron_master tcp://smockron.example.com:10004;
+smockron_domain myapp;</pre>
               <h4>Run the example config</h4>
               <pre>
 ./run-nginx /path/to/nginx</pre>
