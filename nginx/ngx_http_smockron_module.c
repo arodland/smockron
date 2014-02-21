@@ -471,6 +471,8 @@ static ngx_int_t ngx_http_smockron_init(ngx_conf_t *cf) {
 }
 
 static ngx_int_t ngx_http_smockron_shm_init(ngx_shm_zone_t *zone, void *data) {
+  ngx_http_smockron_delay_t *delay;
+  jmp_buf bailout;
 
   if (data) {
     zone->data = data;
@@ -482,6 +484,21 @@ static ngx_int_t ngx_http_smockron_shm_init(ngx_shm_zone_t *zone, void *data) {
     return NGX_ERROR;
   }
   *ngx_http_smockron_delay_hash = NULL;
+
+  delay = ngx_slab_alloc(ngx_http_smockron_delay_pool, sizeof(ngx_http_smockron_delay_t));
+  if (delay == NULL) {
+    ngx_log_error(NGX_LOG_ERR, zone->shm.log, 0, "Allocating delay failed at startup");
+    return NGX_ERROR;
+  }
+  delay->key[0] = '\0';
+  delay->next_allowed = 0;
+
+  if (setjmp(bailout) == 0) {
+    HASH_ADD_STR(*ngx_http_smockron_delay_hash, key, delay);
+  } else {
+    ngx_log_error(NGX_LOG_ERR, zone->shm.log, 0, "HASH_ADD_STR failed at startup");
+    return NGX_ERROR;
+  }
 
   zone->data = (void *)1;
 
