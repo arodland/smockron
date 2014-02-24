@@ -192,9 +192,9 @@ Smockron.Master.prototype.parseInterval = function(interval) {
     return interval;
 
   var suffixes = {
+    ""        :        1,
     "ms"      :        1,
     "msec"    :        1,
-    ""        :     1000,
     "s"       :     1000,
     "sec"     :     1000,
     "second"  :     1000,
@@ -241,6 +241,8 @@ Smockron.Master.prototype.configureDomains = function(domains) {
       ret[name].interval = this.parseInterval(domains[name].interval);
     if (typeof(domains[name].burst) == 'number')
       ret[name].burst = ret[name].interval * domains[name].burst;
+    else if (domains[name].burst.match(/^\d+$/))
+      ret[name].burst = ret[name].interval * parseInt(domains[name].burst, 10);
     else
       ret[name].burst = this.parseInterval(domains[name].burst);
   }
