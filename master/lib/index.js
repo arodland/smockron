@@ -168,9 +168,15 @@ Smockron.Stats = function (opts) {
 Smockron.Stats.prototype.logAccess = function(msg) {
   this.statsd.increment('request.status.' + msg.status);
   this.statsd.increment('request.total');
+  this.statsd.set('identifiers.status.' + msg.status, msg.identifier);
+  this.statsd.set('identifiers.total', msg.identifier);
+
   if (msg.status == 'DELAYED') {
     var delayedBy = msg.delayTS - msg.rcvTS;
-    this.statsd.timing('request.delayed_by', delayedBy);
+    this.statsd.timing('request.delayed_by.delayed', delayedBy);
+    this.statsd.timing('request.delayed_by.all_accepted', delayedBy);
+  } else if (msg.status == 'ACCEPTED') {
+    this.statsd.timing('request.delayed_by.all_accepted', 0);
   }
 };
 
