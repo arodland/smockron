@@ -97,8 +97,8 @@ Smockron.Server.prototype.sendControl = function(opts) {
 /* END SERVER */
 
 Smockron.DataStore = function(opts) {
-  this.server = opts.server;
-  this.redis = redis.createClient(this.server);
+  this.host = opts.host;
+  this.redis = redis.createClient(this.host);
 };
 
 Smockron.DataStore.prototype._getKey = function(opts) {
@@ -109,13 +109,13 @@ var _luaScript = [
   "local key, now, interval, burst = KEYS[1], ARGV[1], ARGV[2], ARGV[3]",
   "local prev = redis.call('get', key)",
   "local new",
-  "if prev and tonumber(prev) >= now - burst * interval then",
+  "if prev and tonumber(prev) >= now - burst then",
   "  new = prev + interval",
   "else",
-  "  new = now - (burst - 1) * interval",
+  "  new = now - burst + interval",
   "end",
   "  redis.call('set', key, new)",
-  "  redis.call('pexpireat', key, now + burst * interval)",
+  "  redis.call('pexpireat', key, now + burst)",
   "  return new"
 ].join("\n");
 
@@ -176,22 +176,75 @@ Smockron.Stats.prototype.logAccess = function(msg) {
 
 /* END STATS */
 
-Smockron.Master = function(opts) {
-  this.server = new Smockron.Server({
-    listen: opts.listen
-  });
-
-  this.dataStore = new Smockron.DataStore({
-    server: opts.dataStore
-  });
-
-  if (opts.stats) {
-    this.stats = new Smockron.Stats(opts.stats);
+Smockron.Master = function(config) {
+  this.config = config;
+  this.server = new Smockron.Server(this.config.server);
+  this.dataStore = new Smockron.DataStore(this.config.datastore);
+  if (this.config.stats) {
+    this.stats = new Smockron.Stats(this.config.stats);
   }
-
-  this.domains = opts.domains;
-
+  this.domains = this.configureDomains(this.config.domains);
   this.server.on('accounting', this._onAccounting.bind(this));
+};
+
+Smockron.Master.prototype.parseInterval = function(interval) {
+  if (typeof(interval) == 'number')
+    return interval;
+
+  var suffixes = {
+    "ms"      :        1,
+    "msec"    :        1,
+    ""        :     1000,
+    "s"       :     1000,
+    "sec"     :     1000,
+    "second"  :     1000,
+    "seconds" :     1000,
+    "m"       :    60000,
+    "min"     :    60000,
+    "minute"  :    60000,
+    "minutes" :    60000,
+    "h"       :  3600000,
+    "hr"      :  3600000,
+    "hour"    :  3600000,
+    "hours"   :  3600000,
+    "d"       : 86400000,
+    "day"     : 86400000,
+    "days"    : 86400000
+  };
+  var re = new RegExp('^\\s*(\\d+)?\\s*(' + Object.keys(suffixes).join('|') + ')\\s*$');
+  var m = interval.match(re);
+  if (m) {
+    var base = m[1] ? parseInt(m[1], 10) : 1;
+    var mult = suffixes[m[2]];
+    return base * mult;
+  } else {
+    throw "bad interval";
+  }
+};
+
+Smockron.Master.prototype.parseRate = function(rate) {
+  var m = rate.match(/^\s*(\d+)\s*(per|\/)\s*(.*)$/);
+  if (!m)
+    throw "bad rate";
+  var num = parseInt(m[1], 10);
+  var interval = this.parseInterval(m[3]);
+  return Math.round(interval / num);
+};
+
+Smockron.Master.prototype.configureDomains = function(domains) {
+  var ret = {};
+  for (var name in domains) {
+    ret[name] = {};
+    if (domains[name].rate)
+      ret[name].interval = this.parseRate(domains[name].rate);
+    else if (domains[name].interval)
+      ret[name].interval = this.parseInterval(domains[name].interval);
+    if (typeof(domains[name].burst) == 'number')
+      ret[name].burst = ret[name].interval * domains[name].burst;
+    else
+      ret[name].burst = this.parseInterval(domains[name].burst);
+  }
+  return ret;
 };
 
 Smockron.Master.prototype.listen = function() {
