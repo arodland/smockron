@@ -1,0 +1,27 @@
+{
+  "name": "smockron",
+  "version": "0.1.0",
+  "description": "Distributed HTTP rate-limiting",
+  "homepage": "http://arodland.github.io/smockron/",
+  "bugs": "http://github.com/arodland/smockron/issues/",
+  "license": "MIT",
+  "author": "Andrew Rodland <andrew@cleverdomain.org>",
+  "repository": {
+    "type": "git",
+    "url": "http://github.com/arodland/smockron.git"
+  },
+  "bin": {
+    "smockron_master": "./bin/master.js"
+  },
+  "dependencies": {
+    "config": "0.4.x",
+    "node-statsd": "0.0.x",
+    "then-redis": "0.3.x",
+    "when": "2.x",
+    "yaml": "0.2.x",
+    "zmq": "2.5.x"
+  },
+  "devDependencies": {
+    "express": "3.x"
+  }
+}
