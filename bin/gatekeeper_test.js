@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 var express = require('express'),
     Smockron = require('../lib/smockron');
 
