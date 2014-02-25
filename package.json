@@ -10,6 +10,9 @@
     "type": "git",
     "url": "http://github.com/arodland/smockron.git"
   },
+  "bin": {
+    "smockron_master": "./bin/master.js"
+  },
   "dependencies": {
     "config": "0.4.x",
     "node-statsd": "0.0.x",
