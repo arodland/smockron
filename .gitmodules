@@ -1,3 +1,6 @@
 [submodule "gatekeeper/nginx-module/uthash"]
 	path = gatekeeper/nginx-module/uthash
 	url = https://github.com/troydhanson/uthash.git
+[submodule "nginx/uthash"]
+	path = nginx/uthash
+	url = https://github.com/troydhanson/uthash.git
