@@ -529,7 +529,7 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
 
       domain = master[i].domains->elts;
       for (j = 0 ; j < master[i].domains->nelts ; j++) {
-        zmq_setsockopt(master[i].control_socket, ZMQ_SUBSCRIBE, domain[j].data, domain[j].len);
+        zmq_setsockopt(master[i].control_socket, ZMQ_SUBSCRIBE, domain[j].data, domain[j].len + 1);
       }
 
       zmq_getsockopt(master[i].control_socket, ZMQ_FD, &controlfd, &fdsize);
