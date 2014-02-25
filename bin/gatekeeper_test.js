@@ -1,17 +1,17 @@
 var express = require('express'),
-    Smockron = require('./lib/');
+    Smockron = require('../lib/smockron');
 
-var smockron = new Smockron({
+var gk = new Smockron.Gatekeeper({
     domain: "default",
     server: "localhost",
-    identifierCB: Smockron.REMOTE_ADDR
+    identifierCB: Smockron.Gatekeeper.REMOTE_ADDR
 });
 
 var app = express();
 
 app.use(express.logger());
 
-app.get('/', smockron.middleware(), function(req, res) {
+app.get('/', gk.middleware(), function(req, res) {
   res.send("OK\n");
 });
 
