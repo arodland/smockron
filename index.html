@@ -28,6 +28,9 @@
       <a href="http://github.com/arodland/smockron/"><span class="icon icon-code"> GitHub</a>
       </li>
       <li>
+      <a href="http://npmjs.org/package/smockron"><span class="icon icon-code"> NPM</a>
+      </li>
+      <li>
       <a href="http://github.com/arodland/smockron/issues"><span class="icon icon-bug"> Issues</a>
       </li>
       <li>
@@ -127,9 +130,12 @@
           <div class="panel">
             <div class="cell">
               <h3>Getting the code</h3>
-              <p>Check it out from <a href="https://github.com/arodland/smockron">GitHub</a>:</p>
+              <p>Install it from <a href="http://npmjs.org/package/smockron">NPM</a>:</p>
+              <pre>npm install smockron</pre>
+              <p>Or check it out from <a href="https://github.com/arodland/smockron">GitHub</a>:</p>
               <pre>git clone https://github.com/arodland/smockron
-git submodule update --init</pre>
+git submodule update --init
+npm install</pre>
             </div>
           </div>
         </div>
@@ -137,16 +143,13 @@ git submodule update --init</pre>
           <div class="panel">
             <div class="cell">
               <h3>Master</h3>
-              <h4>Build</h4>
-              <pre>
-cd smockron/master
-npm install</pre>
               <h4>Configure</h4>
               <pre>
 vi config/default.yaml</pre>
               <h4>Run</h4>
               <pre>
-node bin/master.js</pre>
+smockron_master
+# or: node bin/master.js</pre>
             </div>
           </div>
         </div>
@@ -154,22 +157,19 @@ node bin/master.js</pre>
           <div class="panel">
             <div class="cell">
               <h3>Express middleware</h3>
-              <h4>Build</h4>
-              <pre>
-cd smockron/gatekeeper/node-middleware
-npm install</pre>
               <h4>Configure</h4>
               <pre>
 var Smockron = require('smockron');
-var smockron = new Smockron({
+var gk = new Smockron.Gatekeeper({
     server: "smockron.example.com",
     domain: "myapp",
-    identifierCB: Smockron.REMOTE_ADDR
+    identifierCB: 
+        Smockron.Gatekeeper.REMOTE_ADDR
 });
-app.use(smockron.middleware());</pre>
+app.use(gk.middleware());</pre>
               <h4>Run the example app</h4>
               <pre>
-node test.js</pre>
+node bin/gatekeeper_test.js</pre>
             </div>
           </div>
         </div>
@@ -182,7 +182,7 @@ node test.js</pre>
               Download and unpack <a href="http://wiki.nginx.org/">nginx</a>.
               </p>
               <pre>
-cd smockron/gatekeeper/nginx-module
+cd smockron/nginx
 ./configure-nginx /path/to/nginx
 ./build-nginx /path/to/nginx</pre>
               <h4>Configure</h4>
