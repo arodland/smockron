@@ -55,7 +55,9 @@
     <pre><code class="language-bash">$ npm install smockron</code></pre>
 
     <p>Or check it out from <a href="https://github.com/arodland/smockron">GitHub</a>:</p>
-    <pre><code class="language-bash">$ git clone https://github.com/arodland/smockron</code></pre>
+    <pre><code class="language-bash">$ git clone https://github.com/arodland/smockron
+$ git submodule update --init
+$ npm install</code></pre>
   </section>
 
   <hr>
@@ -65,15 +67,12 @@
     <p>
     The master aggregates request counts and notifies app servers when thresholds are met.
     <p>
-    Install dependencies:
-    <pre><code class="language-bash">$ cd smockron/master
-$ npm install</code></pre>
-
     Configure rate limiting criteria and thresholds:
     <pre><code class="language-bash">$ vi config/default.yaml</code></pre>
 
     Start up the master:
-    <pre><code class="language-bash">$ node bin/master.js</code></pre>
+    <pre><code class="language-bash">$ smockron_master
+# or: node bin/master.js</code></pre>
   </section>
 
   <hr>
@@ -83,21 +82,17 @@ $ npm install</code></pre>
     <p>
     App middleware sends events to the master and listens for throttle notifiactions.  Use either this middleware, or the Nginx module below.
     <p>
-    Install dependencies:
-    <pre><code class="language-bash">$ cd smockron/gatekeeper/node-middleware
-$ npm install</code></pre>
-
     Configure your application:
     <pre><code>var Smockron = require('smockron');
-var smockron = new Smockron({
+var gk = new Smockron.Gatekeeper({
   server: "smockron.example.com",
   domain: "myapp",
-  identifierCB: Smockron.REMOTE_ADDR
+  identifierCB: Smockron.Gatekeeper.REMOTE_ADDR
 });
-app.use(smockron.middleware());</code></pre>
+app.use(gk.middleware());</code></pre>
 
-    Run the example app:
-    <pre><code class="language-bash">$ node test.js</code></pre>
+    Or run the example app:
+    <pre><code class="language-bash">$ node bin/gatekeeper_test.js</code></pre>
   </section>
 
   <hr>
@@ -113,9 +108,9 @@ $ ./configure-nginx /path/to/nginx
 $ ./build-nginx /path/to/nginx</code></pre>
 
     Add configuration in nginx.conf:
-    <pre><code class="language-bash">$ smockron on
-$ smockron_server smockron.example.com
-$ smockron_domain myapp</code></pre>
+    <pre><code class="language-bash">$ smockron on;
+$ smockron_master tcp://smockron.example.com:10004;
+$ smockron_domain myapp;</code></pre>
 
     Run the example config:
     <pre><code class="language-bash">$ ./run-nginx /path/to/nginx</code></pre>
