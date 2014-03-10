@@ -1,15 +1,79 @@
-.site-body {
-  font-size: 15px;
+h3 {
+  margin: 10px 0 15px;
 }
-.cell {
-  margin: 12px;
+pre {
+  border-radius: 2px;
+  padding: 6px;
+  margin: 8px 0 14px;
 }
-@media (min-width: 1200px) {
-  .cell {
-    margin: 18px;
-  }
+section p {
+  margin-top: 25px;
 }
-
-body,p,button,input,select,textarea {
-  font-family: Verdana,"Bitstream Vera Sans",Helvetica,Arial,sans-serif;
+.about p {
+  margin: 0.5em 0 1em 0;
+  color: #777;
+}
+.about h4 {
+  margin-top: 28px;
+}
+.value .col-md-4 {
+  padding-left: 0;
+  padding-right: 37px;
+}
+.value p {
+  color: #777;
+}
+nav.navbar-static-top li:first-child a {
+  color: #555;
+  font-size: 20px;
+  font-family: coolvetica;
+  margin-right: 2px;
+  margin-left: 8px;
+}
+nav.navbar-static-top li:first-child a:hover {
+  color: black;
+}
+.navbar-nav {
+  position: relative;
+  top: 6px;
+}
+.navbar .fa {
+  opacity: 0.55;
+  margin-right: 1px;
+}
+.navbar .fa.fa-code {
+  opacity: 0.8;
+}
+.hero {
+  text-align: center;
+}
+.hero h1 {
+  font-family: coolvetica !important;
+  font-size: 96px;
+  margin: 45px 0 15px;
+}
+.hero h4 {
+  font-size: 20px; 
+}
+.hero h5 {
+  font-size: 20px; 
+  color: #aaa;
+  margin-bottom: 40px;
+}
+.nav > li > a {
+  padding: 10px 12px;
+}
+.navbar-nav > li {
+  float: left;
+}
+.hero img {
+  width: 100%;
+  max-width: 1200px;
+}
+footer.site-footer {
+  border-top: 1px solid #e7e7e7;
+  text-align: center;
+  padding: 30px;
+  margin-top: 45px;
+  color: #aaa;
 }
