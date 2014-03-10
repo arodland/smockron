@@ -9,6 +9,20 @@ pre {
 section p {
   margin-top: 25px;
 }
+.about p {
+  margin: 0.5em 0 1em 0;
+  color: #777;
+}
+.about h4 {
+  margin-top: 28px;
+}
+.value .col-md-4 {
+  padding-left: 0;
+  padding-right: 37px;
+}
+.value p {
+  color: #777;
+}
 nav.navbar-static-top li:first-child a {
   color: #555;
   font-size: 20px;
@@ -49,6 +63,9 @@ nav.navbar-static-top li:first-child a:hover {
 .nav > li > a {
   padding: 10px 12px;
 }
+.navbar-nav > li {
+  float: left;
+}
 .hero img {
   width: 100%;
   max-width: 1200px;
@@ -58,4 +75,5 @@ footer.site-footer {
   text-align: center;
   padding: 30px;
   margin-top: 45px;
+  color: #aaa;
 }
