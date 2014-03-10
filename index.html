@@ -14,7 +14,8 @@
   <nav class="navbar navbar-default navbar-static-top" role="navigation">
     <ul class="nav navbar-nav">
       <li><a href="/">Smockron!</a></li>
-      <li><a href="http://github.com/arodland/smockron"><span class="fa fa-code"></span> GitHub</a></li>
+      <li><a href="http://github.com/arodland/smockron"><span class="fa fa-github"></span> GitHub</a></li>
+      <li><a href="ihttps://www.npmjs.org/package/smockron"><span class="fa fa-code"></span> NPM</a></li>
       <li><a href="http://github.com/arodland/smockron/issues"><span class="fa fa-bug"></span> Bugs</a></li>
       <li><a href="http://github.com/arodland/smockron/wiki"><span class="fa fa-book"></span> Wiki</a></li>
     </ul>
@@ -29,18 +30,18 @@
   </div>
 
 
-  <div class="container">
+  <div class="container value">
     <span class="col-md-4">
-      <h3>Fail-safe</h3>
+      <h4>Fail-safe</h3>
       <p>In the case of server or network outages, Smockron makes sure your application stays accessible.
       Distributed design doesn't add a single point of failure.</p>
     </span>
     <span class="col-md-4">
-      <h3>Lightweight</h3>
+      <h4>Lightweight</h3>
       <p>Smockron uses minimal resources, and causes virtually no slowdown for users who aren't being throttled.</p>
     </span>
     <span class="col-md-4">
-      <h3>Flexible</h3>
+      <h4>Flexible</h3>
       <p>Smockron works no matter what language your application is written in, or what technology you use for
       load-balancing.</p>
     </span>
@@ -50,8 +51,11 @@
 
   <section class="container">
     <h3>Getting the code</h3>
-    <p>Check it out from <a href="https://github.com/arodland/smockron">GitHub</a>:</p>
-    <pre><code class="language-bash">git clone https://github.com/arodland/smockron</code></pre>
+    <p>Install from NPM:
+    <pre><code class="language-bash">$ npm install smockron</code></pre>
+
+    <p>Or check it out from <a href="https://github.com/arodland/smockron">GitHub</a>:</p>
+    <pre><code class="language-bash">$ git clone https://github.com/arodland/smockron</code></pre>
   </section>
 
   <hr>
@@ -101,7 +105,7 @@ app.use(smockron.middleware());</code></pre>
   <section class="container">
     <h3>Nginx module</h3>
     <p>
-    The nginx module sends events to the master and listens for throttle notifiactions.  Use either this Nginx module, or the Express middleware above.
+    If you'd rather limit at the nginx level, use the nginx module instead of the Node middleware.  The nginx module sends events to the master and listens for throttle notifiactions. 
     <p>
     Download and unpack <a href="http://wiki.nginx.org/">nginx</a>:
     <pre><code class="language-bash">$ cd smockron/gatekeeper/nginx-module
@@ -115,6 +119,24 @@ $ smockron_domain myapp</code></pre>
 
     Run the example config:
     <pre><code class="language-bash">$ ./run-nginx /path/to/nginx</code></pre>
+  </section>
+
+  <hr>
+
+  <section class="container about">
+
+    <h3>About Smockron</h3>
+
+    <h4>How does it work?</h4>
+    <p>Application servers use <a href="http://zeromq.org/">ZeroMQ</a> to send information about incoming requests to a Smockron master server. When the master detects that a client is accessing a resource too frequently, it sends a message to servers with that resource instructing them to deny that client for a period of time.
+    <p>For more information about the design of Smockron, see the <a href="https://github.com/arodland/smockron/wiki/Design">Smockron design documentation</a>.
+
+    <h4>What do I need?</h4>
+    <p>The Smockron master is written in <a href="http://nodejs.org/">Node</a> and uses <a href="http://redis.io/">Redis</a> as a data store.  The Smockron gatekeeper exists in two versions: as a Node <a href="http://expressjs.com/">Express</a> middleware, and as an <a href="http://wiki.nginx.org/">Nginx</a> plugin.
+
+    <h4>Is it ready to use?</h4>
+    <p>Smockron is beta software under active development. It's not ready for production use quite yet. All of the components have a basic set of features and are reasonably stable, and you're encouraged to try it out and share your experiences.
+
   </section>
 
   <footer class="site-footer">
