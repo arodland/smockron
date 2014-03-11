@@ -49,7 +49,7 @@ nav.navbar-static-top li:first-child a:hover {
 }
 .hero h1 {
   font-family: coolvetica !important;
-  font-size: 96px;
+  font-size: 64px;
   margin: 45px 0 15px;
 }
 .hero h4 {
@@ -76,4 +76,10 @@ footer.site-footer {
   padding: 30px;
   margin-top: 45px;
   color: #aaa;
+}
+
+@media (min-width: 500px) {
+  .hero h1 {
+    font-size: 96px;
+  }
 }
