@@ -64,7 +64,7 @@ nav.navbar-static-top li:first-child a:hover {
   padding: 8px 6px;
 }
 .navbar-nav {
-  margin-left: -6px;
+  margin: 0 -6px;
 }
 
 .navbar-nav > li {
@@ -90,6 +90,6 @@ footer.site-footer {
     padding: 10px 12px;
   }
   .navbar-nav {
-    margin-left: -12px;
+    margin: 0 -12px;
   }
 }
