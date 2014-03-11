@@ -61,8 +61,12 @@ nav.navbar-static-top li:first-child a:hover {
   margin-bottom: 40px;
 }
 .nav > li > a {
-  padding: 10px 12px;
+  padding: 8px 8px;
 }
+.navbar-nav {
+  margin-left: -8px;
+}
+
 .navbar-nav > li {
   float: left;
 }
@@ -81,5 +85,11 @@ footer.site-footer {
 @media (min-width: 500px) {
   .hero h1 {
     font-size: 96px;
+  }
+  .nav > li > a {
+    padding: 10px 12px;
+  }
+  .navbar-nav {
+    margin-left: -12px;
   }
 }
