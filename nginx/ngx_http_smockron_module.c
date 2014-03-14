@@ -598,7 +598,7 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
       ngx_connection_t *control_connection = ngx_get_connection(controlfd, cycle->log);
       control_connection->read->handler = ngx_http_smockron_control_read;
       control_connection->read->log = cycle->log;
-      control_connection->data = master[i].control_socket;
+      control_connection->data = &master[i];
       ngx_add_event(control_connection->read, NGX_READ_EVENT, 0);
     }
   }
@@ -615,7 +615,8 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
 static void ngx_http_smockron_control_read(ngx_event_t *ev) {
   int events;
   size_t events_size = sizeof(events);
-  void *control_socket = ((ngx_connection_t *)ev->data)->data;
+  ngx_http_smockron_master_t *master = ((ngx_connection_t *)ev->data)->data;
+  void *control_socket = master->control_socket;
 
   zmq_getsockopt(control_socket, ZMQ_EVENTS, &events, &events_size);
 
