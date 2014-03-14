@@ -1,0 +1,12 @@
+2013-03-13: Version 0.1.2
+	* Code cleanup in the nginx module
+	* BUG FIX: domains could be registered multiple times in nginx (#17)
+
+2013-02-25: Version 0.1.1
+	* Add "main" to package.json so that require("smockron") works.
+
+2013-02-25: Version 0.1.0
+	* Initial release to NPM.
+	* NodeJS classes reorganized and renamed significantly.
+	* Master config format changed.
+	* Nginx module feature-complete.
