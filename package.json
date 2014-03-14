@@ -1,6 +1,6 @@
 {
   "name": "smockron",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "main": "./lib/smockron/index.js",
   "description": "Distributed HTTP rate-limiting",
   "homepage": "http://arodland.github.io/smockron/",
