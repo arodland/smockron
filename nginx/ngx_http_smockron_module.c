@@ -49,7 +49,8 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle);
 static ngx_int_t ngx_http_smockron_shm_init(ngx_shm_zone_t *zone, void *data);
 static void ngx_http_smockron_delay(ngx_http_request_t *r);
 static void ngx_http_smockron_control_read(ngx_event_t *ev);
-static void ngx_http_smockron_hash_cleanup_handler(ngx_event_t *ev);
+static void ngx_http_smockron_periodic_handler(ngx_event_t *ev);
+static void ngx_http_smockron_cleanup_hash(ngx_event_t *ev);
 
 static void *zmq_context;
 
@@ -59,7 +60,7 @@ static ngx_array_t *ngx_http_smockron_master_array;
 static ngx_shm_zone_t *ngx_http_smockron_delay_zone;
 static ngx_http_smockron_delay_t **ngx_http_smockron_delay_hash = NULL;
 
-static ngx_event_t hash_cleanup_event;
+static ngx_event_t periodic_event;
 
 #define ngx_http_smockron_delay_pool ((ngx_slab_pool_t *)ngx_http_smockron_delay_zone->shm.addr)
 
@@ -542,9 +543,9 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
   }
 
   if (ngx_process_slot == 0) {
-    hash_cleanup_event.handler = ngx_http_smockron_hash_cleanup_handler;
-    hash_cleanup_event.log = cycle->log;
-    ngx_add_timer(&hash_cleanup_event, 1000);
+    periodic_event.handler = ngx_http_smockron_periodic_handler;
+    periodic_event.log = cycle->log;
+    ngx_add_timer(&periodic_event, 1000);
   }
 
   return NGX_OK;
@@ -642,7 +643,13 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
   }
 }
 
-static void ngx_http_smockron_hash_cleanup_handler(ngx_event_t *ev) {
+static void ngx_http_smockron_periodic_handler(ngx_event_t *ev) {
+  ngx_http_smockron_cleanup_hash(ev);
+
+  ngx_add_timer(&periodic_event, 1000);
+}
+
+static void ngx_http_smockron_cleanup_hash(ngx_event_t *ev) {
   ngx_http_smockron_delay_t *delay = NULL, *tmp = NULL;
   int freed = 0;
 
@@ -661,6 +668,4 @@ static void ngx_http_smockron_hash_cleanup_handler(ngx_event_t *ev) {
   if (freed) {
     ngx_log_error(NGX_LOG_DEBUG, ev->log, 0, "Freed %d", freed);
   }
-
-  ngx_add_timer(&hash_cleanup_event, 1000);
 }
