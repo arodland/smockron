@@ -25,6 +25,10 @@ typedef struct {
 } ngx_http_smockron_main_conf_t;
 
 typedef struct {
+  ngx_str_t name;
+} ngx_http_smockron_domain_t;
+
+typedef struct {
   ngx_str_t accounting_server;
   void *accounting_socket;
   ngx_str_t control_server;
@@ -211,7 +215,7 @@ static ngx_int_t ngx_http_smockron_master_set_control_server(ngx_http_smockron_m
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
   ngx_http_smockron_conf_t *prev = parent;
   ngx_http_smockron_conf_t *conf = child;
-  ngx_str_t *domain;
+  ngx_http_smockron_domain_t *domain;
   unsigned int i;
   int domain_found = 0;
 
@@ -232,7 +236,7 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
       return NGX_CONF_ERROR;
     }
     master->accounting_server = conf->master;
-    master->domains = ngx_array_create(ngx_http_smockron_master_pool, 1, sizeof(ngx_str_t));
+    master->domains = ngx_array_create(ngx_http_smockron_master_pool, 1, sizeof(ngx_http_smockron_domain_t));
     if (master->domains == NULL) {
       return NGX_CONF_ERROR;
     }
@@ -246,7 +250,7 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
 
   domain = master->domains->elts;
   for (i = 0 ; i < master->domains->nelts ; i++) {
-    if (ngx_strcmp(domain[i].data, conf->domain.data) == 0) {
+    if (ngx_strcmp(domain[i].name.data, conf->domain.data) == 0) {
       domain_found = 1;
       break;
     }
@@ -257,7 +261,7 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
     if (domain == NULL) {
       return NGX_CONF_ERROR;
     }
-    *domain = conf->domain;
+    domain->name = conf->domain;
   }
 
   if (conf->identifier.value.data == NULL) {
@@ -510,7 +514,7 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
 
   ngx_http_smockron_master_t *master = ngx_http_smockron_master_array->elts;
   unsigned int i,j;
-  ngx_str_t *domain;
+  ngx_http_smockron_domain_t *domain;
 
   for (i = 0 ; i < ngx_http_smockron_master_array->nelts ; i++) {
     master[i].accounting_socket = zmq_socket(zmq_context, ZMQ_PUB);
@@ -530,7 +534,7 @@ static ngx_int_t ngx_http_smockron_initproc(ngx_cycle_t *cycle) {
 
       domain = master[i].domains->elts;
       for (j = 0 ; j < master[i].domains->nelts ; j++) {
-        zmq_setsockopt(master[i].control_socket, ZMQ_SUBSCRIBE, domain[j].data, domain[j].len + 1);
+        zmq_setsockopt(master[i].control_socket, ZMQ_SUBSCRIBE, domain[j].name.data, domain[j].name.len + 1);
       }
 
       zmq_getsockopt(master[i].control_socket, ZMQ_FD, &controlfd, &fdsize);
