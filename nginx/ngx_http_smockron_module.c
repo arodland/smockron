@@ -26,6 +26,8 @@ typedef struct {
 
 typedef struct {
   ngx_str_t name;
+  int resync_start :1;
+  int resync_done :1;
 } ngx_http_smockron_domain_t;
 
 typedef struct {
@@ -54,6 +56,7 @@ static ngx_int_t ngx_http_smockron_shm_init(ngx_shm_zone_t *zone, void *data);
 static void ngx_http_smockron_delay(ngx_http_request_t *r);
 static void ngx_http_smockron_control_read(ngx_event_t *ev);
 static void ngx_http_smockron_periodic_handler(ngx_event_t *ev);
+static void ngx_http_smockron_request_resync(ngx_event_t *ev);
 static void ngx_http_smockron_cleanup_hash(ngx_event_t *ev);
 
 static void *zmq_context;
@@ -267,6 +270,8 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
       return NGX_CONF_ERROR;
     }
     domain->name = conf->domain;
+    domain->resync_start = 0;
+    domain->resync_done = 0;
   }
 
   if (conf->identifier.value.data == NULL) {
@@ -662,7 +667,18 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
     if (ngx_strcmp(msg[1].data, "DELAY_UNTIL") == 0) {
       uint64_t ts = atol((char *)msg[3].data);
       set_ident_next_allowed_request(msg[0], msg[2], ts, ev->log);
+    } else if (ngx_strcmp(msg[1].data, "RESYNCSTART") == 0) {
+      ngx_http_smockron_domain_t *domain = ngx_http_smockron_find_domain(master, msg[0]);
+      if (domain) {
+        domain->resync_start = 1;
+      }
+    } else if (ngx_strcmp(msg[1].data, "RESYNCDONE") == 0) {
+      ngx_http_smockron_domain_t *domain = ngx_http_smockron_find_domain(master, msg[0]);
+      if (domain && domain->resync_start) {
+        domain->resync_done = 1;
+      }
     }
+
     out:
     events = 0;
     zmq_getsockopt(control_socket, ZMQ_EVENTS, &events, &events_size);
@@ -670,9 +686,24 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
 }
 
 static void ngx_http_smockron_periodic_handler(ngx_event_t *ev) {
+  ngx_http_smockron_request_resync(ev);
   ngx_http_smockron_cleanup_hash(ev);
 
-  ngx_add_timer(&periodic_event, 1000);
+  ngx_add_timer(&periodic_event, 100);
+}
+
+static void ngx_http_smockron_request_resync(ngx_event_t *ev) {
+  unsigned int i,j;
+  ngx_http_smockron_master_t *master = ngx_http_smockron_master_array->elts;
+  for (i = 0 ; i < ngx_http_smockron_master_array->nelts ; i++) {
+    ngx_http_smockron_domain_t *domain = master[i].domains->elts;
+    for (j = 0 ; j < master[i].domains->nelts ; j++) {
+      if (!domain[j].resync_done) {
+        zmq_send(master[i].accounting_socket, domain[j].name.data, domain[j].name.len + 1, ZMQ_SNDMORE);
+        zmq_send(master[i].accounting_socket, "RESYNC", 6, 0);
+      }
+    }
+  }
 }
 
 static void ngx_http_smockron_cleanup_hash(ngx_event_t *ev) {
