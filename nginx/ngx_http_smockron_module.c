@@ -336,21 +336,28 @@ static inline uint64_t get_request_time(ngx_http_request_t *r) {
   return r->start_sec * 1000 + r->start_msec;
 }
 
+static int ngx_http_smockron_make_hash_key(ngx_str_t domain, ngx_str_t ident, char *key) {
+  if (domain.len + ident.len + 1 > DELAY_KEY_LEN) {
+    return NGX_ERROR;
+  }
+
+  strncpy(key, (char *)domain.data, domain.len);
+  key[domain.len] = ';';
+  strncpy(key + domain.len + 1, (char *)ident.data, ident.len);
+  key[domain.len + ident.len + 1] = '\0';
+  return NGX_OK;
+}
+
 static inline uint64_t get_ident_next_allowed_request(ngx_str_t domain, ngx_str_t ident, ngx_log_t *log) {
   char key[DELAY_KEY_LEN];
   uint64_t ret;
 
-  if (domain.len + ident.len + 1 > DELAY_KEY_LEN) {
+  if (ngx_http_smockron_make_hash_key(domain, ident, key) != NGX_OK) {
     ngx_log_error(NGX_LOG_ERR, log, 0, "domain len %d + ident len %d > key size %d",
         domain.len + 1, ident.len, DELAY_KEY_LEN);
     return 0;
   }
       
-  strncpy(key, (char *)domain.data, domain.len);
-  key[domain.len] = ';';
-  strncpy(key + domain.len + 1, (char *)ident.data, ident.len);
-  key[domain.len + ident.len + 1] = '\0';
-
   ngx_http_smockron_delay_t *delay = NULL;
   ngx_shmtx_lock(&ngx_http_smockron_delay_pool->mutex);
   HASH_FIND_STR(*ngx_http_smockron_delay_hash, key, delay);
@@ -565,7 +572,8 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
   while (events & ZMQ_POLLIN) {
     int more;
     size_t more_size = sizeof(more);
-    char msg[4][256];
+    ngx_str_t msg[4];
+    unsigned char msgbuf[4][256];
     int i = 0;
 
     do {
@@ -574,16 +582,18 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
         break;
       }
 
-      bzero(msg[i], sizeof(msg[i]));
-      int rc = zmq_recv(control_socket, msg[i], sizeof(msg[i]), 0);
+      bzero(msgbuf[i], sizeof(msgbuf[i]));
+      int rc = zmq_recv(control_socket, msgbuf[i], sizeof(msgbuf[i]), 0);
       if (rc == -1) {
         ngx_log_error(NGX_LOG_ERR, ev->log, 0, "%s receiving control message, dropping", strerror(errno));
         goto out;
       }
-      if ((unsigned)rc > sizeof(msg[i])) {
+      if ((unsigned)rc > sizeof(msgbuf[i])) {
         ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Control part length %d > %d, dropping", rc, sizeof(msg[i]));
         goto out;
       }
+      msg[i].data = msgbuf[i];
+      msg[i].len = rc;
 
       rc = zmq_getsockopt(control_socket, ZMQ_RCVMORE, &more, &more_size);
       assert(rc == 0);
@@ -591,25 +601,21 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
       i++;
     } while (more);
 
-    if (ngx_strcmp(msg[1], "DELAY_UNTIL") == 0) {
-      size_t domain_len = strlen(msg[0]) + 1 /* separator */,
-             ident_len = strlen(msg[2]);
-      char key[DELAY_KEY_LEN];
-      uint64_t ts = atol(msg[3]);
-      int delay_hash_was_null;
+    msg[0].len --; /* Don't include domain trailing NULL in len */
 
+    if (ngx_strcmp(msg[1].data, "DELAY_UNTIL") == 0) {
+      ngx_str_t domain, ident;
+      char key[DELAY_KEY_LEN];
+      uint64_t ts = atol((char *)msg[3].data);
+      int delay_hash_was_null;
       ngx_http_smockron_delay_t *delay;
 
-      if (domain_len + ident_len > DELAY_KEY_LEN) {
+      if (ngx_http_smockron_make_hash_key(msg[0], msg[2], key) != NGX_OK) {
         ngx_log_error(NGX_LOG_ERR, ev->log, 0, "domain len %d + ident len %d > key size %d",
-            domain_len, ident_len, DELAY_KEY_LEN);
+            domain.len + 1, ident.len, DELAY_KEY_LEN);
         goto out;
       }
       
-      strcpy(key, msg[0]);
-      key[domain_len - 1] = ';';
-      strcpy(key + domain_len, msg[2]);
-
       ngx_shmtx_lock(&ngx_http_smockron_delay_pool->mutex);
       delay_hash_was_null = *ngx_http_smockron_delay_hash == NULL;
       HASH_FIND_STR(*ngx_http_smockron_delay_hash, key, delay);
