@@ -246,7 +246,7 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
 
   domain = master->domains->elts;
   for (i = 0 ; i < master->domains->nelts ; i++) {
-    if (ngx_strcmp(domain->data, conf->domain.data) == 0) {
+    if (ngx_strcmp(domain[i].data, conf->domain.data) == 0) {
       domain_found = 1;
       break;
     }
