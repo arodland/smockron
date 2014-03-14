@@ -366,6 +366,56 @@ static inline uint64_t get_ident_next_allowed_request(ngx_str_t domain, ngx_str_
   return ret;
 }
 
+static int set_ident_next_allowed_request(ngx_str_t domain, ngx_str_t ident, uint64_t ts, ngx_log_t *log) {
+  int delay_hash_was_null;
+  ngx_http_smockron_delay_t *delay;
+  char key[DELAY_KEY_LEN];
+  int rc = NGX_OK;
+
+  if (ngx_http_smockron_make_hash_key(domain, ident, key) != NGX_OK) {
+    ngx_log_error(NGX_LOG_ERR, log, 0, "domain len %d + ident len %d > key size %d",
+        domain.len + 1, ident.len, DELAY_KEY_LEN);
+    rc = NGX_ERROR;
+    goto out;
+  }
+      
+  ngx_shmtx_lock(&ngx_http_smockron_delay_pool->mutex);
+  delay_hash_was_null = *ngx_http_smockron_delay_hash == NULL;
+  HASH_FIND_STR(*ngx_http_smockron_delay_hash, key, delay);
+  if (!delay) { /* Newly added */
+    jmp_buf bailout;
+
+    delay = ngx_slab_alloc_locked(ngx_http_smockron_delay_pool, sizeof(ngx_http_smockron_delay_t));
+    if (delay == NULL) {
+      ngx_log_error(NGX_LOG_ERR, log, 0, "Allocating delay failed, increase smockron_shm_size");
+      rc = NGX_ERROR;
+      goto out_unlock;
+    }
+    strcpy(delay->key, key);
+    delay->next_allowed = ts;
+    if (setjmp(bailout) == 0) {
+      HASH_ADD_STR(*ngx_http_smockron_delay_hash, key, delay);
+    } else {
+      ngx_log_error(NGX_LOG_ERR, log, 0, "HASH_ADD_STR failed, increase smockron_shm_size");
+      if (delay_hash_was_null && *ngx_http_smockron_delay_hash) {
+        /* Otherwise we end up with a bad hash head that causes a segv on next access */
+        ngx_slab_free_locked(ngx_http_smockron_delay_pool, *ngx_http_smockron_delay_hash);
+        *ngx_http_smockron_delay_hash = NULL;
+      }
+      rc = NGX_ERROR;
+      goto out_unlock;
+    }
+  } else if (delay->next_allowed < ts) {
+    delay->next_allowed = ts;
+  }
+
+  out_unlock:
+  ngx_shmtx_unlock(&ngx_http_smockron_delay_pool->mutex);
+  out:
+  return rc;
+}
+
+
 static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
   ngx_http_smockron_conf_t *smockron_config;
   ngx_str_t ident;
@@ -604,49 +654,9 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
     msg[0].len --; /* Don't include domain trailing NULL in len */
 
     if (ngx_strcmp(msg[1].data, "DELAY_UNTIL") == 0) {
-      ngx_str_t domain, ident;
-      char key[DELAY_KEY_LEN];
       uint64_t ts = atol((char *)msg[3].data);
-      int delay_hash_was_null;
-      ngx_http_smockron_delay_t *delay;
-
-      if (ngx_http_smockron_make_hash_key(msg[0], msg[2], key) != NGX_OK) {
-        ngx_log_error(NGX_LOG_ERR, ev->log, 0, "domain len %d + ident len %d > key size %d",
-            domain.len + 1, ident.len, DELAY_KEY_LEN);
-        goto out;
-      }
-      
-      ngx_shmtx_lock(&ngx_http_smockron_delay_pool->mutex);
-      delay_hash_was_null = *ngx_http_smockron_delay_hash == NULL;
-      HASH_FIND_STR(*ngx_http_smockron_delay_hash, key, delay);
-      if (!delay) { /* Newly added */
-        jmp_buf bailout;
-
-        delay = ngx_slab_alloc_locked(ngx_http_smockron_delay_pool, sizeof(ngx_http_smockron_delay_t));
-        if (delay == NULL) {
-          ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Allocating delay failed, increase smockron_shm_size");
-          goto out_unlock;
-        }
-        strcpy(delay->key, key);
-        delay->next_allowed = ts;
-        if (setjmp(bailout) == 0) {
-          HASH_ADD_STR(*ngx_http_smockron_delay_hash, key, delay);
-        } else {
-          ngx_log_error(NGX_LOG_ERR, ev->log, 0, "HASH_ADD_STR failed, increase smockron_shm_size");
-          if (delay_hash_was_null && *ngx_http_smockron_delay_hash) {
-            /* Otherwise we end up with a bad hash head that causes a segv on next access */
-            ngx_slab_free_locked(ngx_http_smockron_delay_pool, *ngx_http_smockron_delay_hash);
-            *ngx_http_smockron_delay_hash = NULL;
-          }
-          goto out_unlock;
-        }
-      } else if (delay->next_allowed < ts) {
-        delay->next_allowed = ts;
-      }
+      set_ident_next_allowed_request(msg[0], msg[2], ts, ev->log);
     }
-
-    out_unlock:
-    ngx_shmtx_unlock(&ngx_http_smockron_delay_pool->mutex);
     out:
     events = 0;
     zmq_getsockopt(control_socket, ZMQ_EVENTS, &events, &events_size);
