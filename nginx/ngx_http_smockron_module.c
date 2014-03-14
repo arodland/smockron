@@ -212,12 +212,23 @@ static ngx_int_t ngx_http_smockron_master_set_control_server(ngx_http_smockron_m
   return NGX_OK;
 }
 
+static ngx_http_smockron_domain_t *ngx_http_smockron_find_domain(ngx_http_smockron_master_t *master, ngx_str_t name) {
+  ngx_http_smockron_domain_t *domain = master->domains->elts;
+  unsigned int i;
+
+  for (i = 0 ; i < master->domains->nelts ; i++) {
+    if (ngx_strcmp(domain[i].name.data, name.data) == 0) {
+      return &domain[i];
+    }
+  }
+  return NULL;
+}
+
 static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
   ngx_http_smockron_conf_t *prev = parent;
   ngx_http_smockron_conf_t *conf = child;
   ngx_http_smockron_domain_t *domain;
   unsigned int i;
-  int domain_found = 0;
 
   ngx_conf_merge_value(conf->enabled, prev->enabled, 0);
   ngx_conf_merge_str_value(conf->master, prev->master, "tcp://localhost:10004");
@@ -248,15 +259,9 @@ static char *ngx_http_smockron_merge_loc_conf(ngx_conf_t *cf, void *parent, void
 
   ngx_conf_merge_str_value(conf->domain, prev->domain, "default");
 
-  domain = master->domains->elts;
-  for (i = 0 ; i < master->domains->nelts ; i++) {
-    if (ngx_strcmp(domain[i].name.data, conf->domain.data) == 0) {
-      domain_found = 1;
-      break;
-    }
-  }
+  domain = ngx_http_smockron_find_domain(master, conf->domain);
 
-  if (!domain_found) {
+  if (domain == NULL) {
     domain = ngx_array_push(master->domains);
     if (domain == NULL) {
       return NGX_CONF_ERROR;
