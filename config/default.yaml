@@ -1,5 +1,6 @@
-server:
+socket:
   listen: "0.0.0.0"
+  packetLen: 1200
 datastore:
   host: localhost
 domains:
