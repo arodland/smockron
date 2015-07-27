@@ -376,6 +376,8 @@ static inline uint64_t get_ident_next_allowed_request(ngx_str_t domain, ngx_str_
   return ret;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wclobbered"
 static int set_ident_next_allowed_request(ngx_str_t domain, ngx_str_t ident, uint64_t ts, ngx_log_t *log) {
   int delay_hash_was_null;
   ngx_http_smockron_delay_t *delay;
@@ -424,6 +426,7 @@ static int set_ident_next_allowed_request(ngx_str_t domain, ngx_str_t ident, uin
   out:
   return rc;
 }
+#pragma GCC diagnostic pop
 
 
 static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
@@ -485,12 +488,27 @@ static ngx_int_t ngx_http_smockron_handler(ngx_http_request_t *r) {
     rc = NGX_HTTP_SERVICE_UNAVAILABLE;
   }
 
-  zmq_send(master->accounting_socket, smockron_config->domain.data, smockron_config->domain.len + 1, ZMQ_SNDMORE);
-  zmq_send(master->accounting_socket, status.data, status.len, ZMQ_SNDMORE);
-  zmq_send(master->accounting_socket, ident.data, ident.len, ZMQ_SNDMORE);
-  zmq_send(master->accounting_socket, receive_time, receive_time_len, ZMQ_SNDMORE);
-  zmq_send(master->accounting_socket, delay_time, delay_time_len, ZMQ_SNDMORE);
-  zmq_send(master->accounting_socket, log_info.data, log_info.len, 0);
+  zmq_msg_t msg;
+  if (zmq_msg_init_size(&msg, smockron_config->domain.len + 1 + status.len + 1 + ident.len + 1 + receive_time_len + 1 + delay_time_len) < 0) {
+    return NGX_ERROR;
+  }
+
+  char *data = zmq_msg_data(&msg);
+  memcpy(data, smockron_config->domain.data, smockron_config->domain.len + 1);
+  data += smockron_config->domain.len + 1;
+  memcpy(data, status.data, status.len + 1);
+  data += status.len + 1;
+  memcpy(data, ident.data, ident.len + 1);
+  data += ident.len;
+  *data = 0;
+  data++;
+  memcpy(data, receive_time, receive_time_len + 1);
+  data += receive_time_len + 1;
+  memcpy(data, delay_time, delay_time_len);
+  data += delay_time_len;
+
+  zmq_msg_send(&msg, master->accounting_socket, 0);
+  zmq_msg_close(&msg);
 
   return rc;
 }
@@ -631,38 +649,32 @@ static void ngx_http_smockron_control_read(ngx_event_t *ev) {
   zmq_getsockopt(control_socket, ZMQ_EVENTS, &events, &events_size);
 
   while (events & ZMQ_POLLIN) {
-    int more;
-    size_t more_size = sizeof(more);
     ngx_str_t msg[4];
-    unsigned char msgbuf[4][256];
-    int i = 0;
+    unsigned char msgbuf[1025];
+    bzero(msgbuf, sizeof(msgbuf));
 
-    do {
+    int rc = zmq_recv(control_socket, msgbuf, sizeof(msgbuf) - 1, 0);
+    if (rc == -1) {
+      ngx_log_error(NGX_LOG_ERR, ev->log, 0, "%s receiving control message, dropping", strerror(errno));
+      goto out;
+    }
+    if ((unsigned)rc > sizeof(msgbuf)) {
+      ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Control message length %d > %d, dropping", rc, sizeof(msgbuf) - 1);
+      goto out;
+    }
+
+    int i = 0;
+    unsigned char *part = msgbuf;
+    while (part < msgbuf + rc) {
       if (i > 4) {
         ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Control message has unexpected parts, ignoring");
         break;
       }
-
-      bzero(msgbuf[i], sizeof(msgbuf[i]));
-      int rc = zmq_recv(control_socket, msgbuf[i], sizeof(msgbuf[i]), 0);
-      if (rc == -1) {
-        ngx_log_error(NGX_LOG_ERR, ev->log, 0, "%s receiving control message, dropping", strerror(errno));
-        goto out;
-      }
-      if ((unsigned)rc > sizeof(msgbuf[i])) {
-        ngx_log_error(NGX_LOG_ERR, ev->log, 0, "Control part length %d > %d, dropping", rc, sizeof(msg[i]));
-        goto out;
-      }
-      msg[i].data = msgbuf[i];
-      msg[i].len = rc;
-
-      rc = zmq_getsockopt(control_socket, ZMQ_RCVMORE, &more, &more_size);
-      assert(rc == 0);
-
+      msg[i].data = part;
+      msg[i].len = strlen((char *)part);
+      part += msg[i].len + 1;
       i++;
-    } while (more);
-
-    msg[0].len --; /* Don't include domain trailing NULL in len */
+    }
 
     if (ngx_strcmp(msg[1].data, "DELAY_UNTIL") == 0) {
       uint64_t ts = atol((char *)msg[3].data);
@@ -699,8 +711,10 @@ static void ngx_http_smockron_request_resync(ngx_event_t *ev) {
     ngx_http_smockron_domain_t *domain = master[i].domains->elts;
     for (j = 0 ; j < master[i].domains->nelts ; j++) {
       if (!domain[j].resync_done) {
-        zmq_send(master[i].accounting_socket, domain[j].name.data, domain[j].name.len + 1, ZMQ_SNDMORE);
-        zmq_send(master[i].accounting_socket, "RESYNC", 6, 0);
+        char msg[1024];
+        strncpy(msg, (char *)domain[j].name.data, domain[j].name.len + 1);
+        strncpy(msg + domain[j].name.len + 1, "RESYNC", 6);
+        zmq_send(master[i].accounting_socket, msg, domain[j].name.len + 7, 0);
       }
     }
   }
