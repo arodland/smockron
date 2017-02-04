@@ -375,7 +375,7 @@ static int set_ident_next_allowed_request(ngx_str_t domain, ngx_str_t ident, uin
   int delay_hash_was_null;
   ngx_http_smockron_delay_t *delay;
   char key[DELAY_KEY_LEN];
-  int rc = NGX_OK;
+  volatile int rc = NGX_OK;
 
   if (ngx_http_smockron_make_hash_key(domain, ident, key) != NGX_OK) {
     ngx_log_error(NGX_LOG_ERR, log, 0, "domain len %d + ident len %d > key size %d",
